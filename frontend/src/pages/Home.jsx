@@ -1,41 +1,39 @@
-import { useEffect, useState } from "react";
-import { motion, animate } from "framer-motion";
+import { useEffect, useState, useRef } from "react";
 import {
-  AreaChart,
-  Area,
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  XAxis,
-  Tooltip,
-} from "recharts";
+  motion,
+  animate,
+  AnimatePresence,
+  useScroll,
+  useSpring,
+  useTransform,
+  useVelocity,
+} from "framer-motion";
+import { AreaChart, Area, ResponsiveContainer, BarChart, Bar } from "recharts";
 import {
   FiGrid,
   FiPocket,
   FiActivity,
   FiUsers,
-  FiSettings,
   FiBell,
   FiShield,
   FiCpu,
   FiUserCheck,
   FiEye,
-  FiArrowUpRight,
   FiLock,
   FiGlobe,
   FiZap,
-  FiSmartphone,
   FiCheckCircle,
   FiPieChart,
-  FiMapPin,
   FiTerminal,
   FiDatabase,
   FiServer,
   FiCreditCard,
   FiAlertCircle,
+  FiStar,
+  FiArrowRight,
 } from "react-icons/fi";
 
-// --- ANIMATED RUPEE/NUMBER FORMATTING ---
+// --- ANIMATED NUMBER ---
 const AnimatedNumber = ({ value }) => {
   const [displayValue, setDisplayValue] = useState("0");
   useEffect(() => {
@@ -57,7 +55,7 @@ const AnimatedNumber = ({ value }) => {
   return <span>{displayValue}</span>;
 };
 
-// --- STACKED DASHBOARD CONTAINER ---
+// --- STACKED DASHBOARD ---
 const DashboardStack = ({ children, index }) => {
   return (
     <motion.div
@@ -65,8 +63,7 @@ const DashboardStack = ({ children, index }) => {
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: false, margin: "-5%" }}
       transition={{ duration: 0.8, ease: "easeOut" }}
-      // Stacking logic: Har dashboard pichle wale se 40px niche rukega
-      className="sticky mb-32 w-full max-w-[1180px] mx-auto px-4"
+      className="sticky mb-6 w-full max-w-[1180px] mx-auto px-4"
       style={{
         zIndex: index,
         top: `${80 + index * 40}px`,
@@ -76,6 +73,350 @@ const DashboardStack = ({ children, index }) => {
         {children}
       </div>
     </motion.div>
+  );
+};
+
+// === HYPER PERFECT REVEAL ===
+const HyperPerfectReveal = () => {
+  const targetRef = useRef(null);
+
+  const { scrollYProgress } = useScroll({
+    target: targetRef,
+    offset: ["start end", "end start"],
+  });
+
+  const xTransform = useTransform(scrollYProgress, [0, 1], ["30%", "-70%"]);
+  const x = useSpring(xTransform, { stiffness: 60, damping: 25 });
+
+  const scrollVelocity = useVelocity(scrollYProgress);
+  const skewXTransform = useTransform(scrollVelocity, [-0.5, 0.5], [-20, 20]);
+  const skewX = useSpring(skewXTransform, { stiffness: 400, damping: 30 });
+
+  return (
+    <section ref={targetRef} className="relative h-[200vh] bg-[#F8FAFC]">
+      <div className="sticky top-0 h-screen w-full flex items-center overflow-hidden">
+        <div className="absolute inset-0 flex items-center">
+          <motion.div
+            style={{ x, skewX }}
+            className="flex items-center gap-12 whitespace-nowrap text-[22vw] font-black uppercase tracking-tighter text-slate-100/80 select-none"
+          >
+            <span>Drishti</span>
+            <FiStar className="text-[12vw] text-slate-200" />
+            <span>is</span>
+            <span className="italic font-light">Future</span>
+            <span>—</span>
+            <span>Pay</span>
+            <FiStar className="text-[12vw] text-slate-200" />
+            <span>Secure</span>
+          </motion.div>
+        </div>
+
+        <div className="relative w-full h-[50vh] flex items-center overflow-hidden border-y border-slate-100 bg-white/10 backdrop-blur-[2px] z-10">
+          <motion.div
+            style={{ x, skewX }}
+            className="flex items-center gap-12 whitespace-nowrap text-[22vw] font-black uppercase tracking-tighter text-slate-900 select-none"
+          >
+            <span className="drop-shadow-2xl">Drishti</span>
+            <motion.div
+              animate={{ rotate: 360 }}
+              transition={{ duration: 10, repeat: Infinity, ease: "linear" }}
+            >
+              <FiStar className="text-[12vw] text-indigo-600" />
+            </motion.div>
+            <span>is</span>
+            <span className="italic font-medium text-indigo-500">Future</span>
+            <span>—</span>
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-purple-600">
+              Pay
+            </span>
+            <FiStar className="text-[12vw] text-indigo-600" />
+            <span>Secure</span>
+          </motion.div>
+        </div>
+
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 flex items-center gap-3">
+          <div className="px-4 py-1 rounded-full border border-slate-200 bg-white shadow-sm flex items-center gap-2">
+            <span className="w-2 h-2 bg-indigo-500 rounded-full animate-ping" />
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+              Live Neural Stream
+            </span>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+};
+
+const steps = [
+  {
+    title: "Register Once",
+    desc: "Create your FacePay account with basic details and complete a one-time face setup.  No repeated verification needed.",
+    icon: <FiEye />,
+    color: "#6366f1",
+    tag: "PHASE / 01",
+    bgText: "01",
+  },
+  {
+    title: "Scan Your Face",
+    desc: "When you want to pay or login, simply look at the camera.  FacePay uses live face detection in real time.",
+    icon: <FiLock />,
+    color: "#10b981",
+    tag: "PHASE / 02",
+    bgText: "02",
+  },
+  {
+    title: "AI Verification",
+    desc: "Our AI verifies liveness and confirms your identity instantly to ensure it's really you — not a photo or video.",
+    icon: <FiShield />,
+    color: "#f59e0b",
+    tag: "PHASE / 03",
+    bgText: "03",
+  },
+  {
+    title: "Pay Instantly",
+    desc: "Once verified, the payment is completed securely within seconds. No PINs, no OTPs, no passwords.",
+    icon: <FiZap />,
+    color: "#ec4899",
+    tag: "PHASE / 04",
+    bgText: "04",
+  },
+];
+
+// === HOW IT WORKS - AESTHETIC SPLIT REVEAL ===
+const AestheticSplitReveal = () => {
+  const [activeStep, setActiveStep] = useState(0);
+
+  const containerRef = useRef(null);
+  const { scrollYProgress } = useScroll({
+    target: containerRef,
+    offset: ["start start", "end end"],
+  });
+  const scaleX = useSpring(scrollYProgress, { stiffness: 100, damping: 30 });
+
+  return (
+    <section
+      ref={containerRef}
+      className="relative bg-[#F8FAFC] font-sans selection:bg-indigo-100"
+    >
+      <motion.div
+        style={{ scaleX }}
+        className="fixed top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 z-[100] origin-left"
+      />
+
+      <div className="flex flex-col lg:flex-row">
+        <div className="lg:w-5/12 h-[60vh] lg:h-screen sticky top-0 overflow-hidden flex items-center justify-center bg-[#FCFCFC]">
+          <div className="absolute inset-0 z-0">
+            <motion.div
+              animate={{
+                backgroundColor: steps[activeStep].color,
+                opacity: [0.05, 0.08, 0.05],
+                scale: [1, 1.1, 1],
+              }}
+              transition={{ duration: 4, repeat: Infinity }}
+              className="absolute top-[-10%] left-[-10%] w-full h-full rounded-full blur-[120px]"
+            />
+          </div>
+
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeStep}
+              initial={{ opacity: 0, scale: 0.9, rotateY: -20 }}
+              animate={{ opacity: 1, scale: 1, rotateY: 0 }}
+              exit={{ opacity: 0, scale: 1.1, rotateY: 20 }}
+              transition={{ duration: 0.7, ease: [0.23, 1, 0.32, 1] }}
+              className="relative z-10"
+            >
+              <div className="relative w-64 h-80 bg-white/80 backdrop-blur-xl rounded-[3rem] border border-white shadow-[0_40px_100px_-20px_rgba(0,0,0,0.1)] flex flex-col items-center justify-center group">
+                <motion.div
+                  animate={{ y: [0, -12, 0] }}
+                  transition={{
+                    duration: 5,
+                    repeat: Infinity,
+                    ease: "easeInOut",
+                  }}
+                  style={{ color: steps[activeStep].color }}
+                  className="text-8xl drop-shadow-2xl"
+                >
+                  {steps[activeStep].icon}
+                </motion.div>
+
+                <div className="absolute bottom-10 px-6 py-1 rounded-full bg-slate-50 border border-slate-100">
+                  <span className="text-[10px] font-bold tracking-widest text-slate-400 uppercase">
+                    Secure Link
+                  </span>
+                </div>
+              </div>
+            </motion.div>
+          </AnimatePresence>
+
+          <div className="absolute right-8 top-1/2 -translate-y-1/2 hidden lg:flex flex-col gap-4">
+            {steps.map((_, i) => (
+              <div
+                key={i}
+                className={`h-12 w-0.5 transition-all duration-700 ${
+                  activeStep === i ? "bg-slate-800" : "bg-slate-200"
+                }`}
+              />
+            ))}
+          </div>
+        </div>
+
+        <div className="lg:w-7/12 px-8 lg:px-24">
+          {steps.map((step, idx) => (
+            <motion.div
+              key={idx}
+              onViewportEnter={() => setActiveStep(idx)}
+              viewport={{ amount: 0.6 }}
+              className="min-h-screen flex flex-col justify-center relative"
+            >
+              <span className="absolute left-[-20px] top-1/4 text-[20rem] font-black text-slate-50 select-none -z-10 leading-none">
+                {step.bgText}
+              </span>
+
+              <div className="max-w-xl">
+                <motion.div
+                  initial={{ opacity: 0, x: -20 }}
+                  whileInView={{ opacity: 1, x: 0 }}
+                  className="flex items-center gap-4 mb-6"
+                >
+                  <span className="h-[1px] w-12 bg-slate-300" />
+                  <span className="text-xs font-bold tracking-[0.4em] text-slate-400 uppercase">
+                    {step.tag}
+                  </span>
+                </motion.div>
+
+                <h3
+                  className={`text-6xl lg:text-8xl font-bold tracking-tight mb-8 transition-colors duration-700 ${
+                    activeStep === idx ? "text-slate-900" : "text-slate-200"
+                  }`}
+                >
+                  {step.title}
+                </h3>
+
+                <p
+                  className={`text-xl lg:text-2xl font-normal leading-relaxed transition-all duration-700 ${
+                    activeStep === idx
+                      ? "text-slate-500"
+                      : "text-slate-200 opacity-50"
+                  }`}
+                >
+                  {step.desc}
+                </p>
+
+                <motion.div
+                  animate={{ opacity: activeStep === idx ? 1 : 0 }}
+                  className="mt-12 flex items-center gap-6"
+                >
+                  <button
+                    style={{ backgroundColor: step.color }}
+                    className="px-8 py-4 rounded-2xl text-white font-medium shadow-lg hover:brightness-110 transition-all"
+                  >
+                    Learn More
+                  </button>
+                </motion.div>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+
+      <div className="fixed bottom-8 left-8 z-50 flex items-center gap-4 mix-blend-difference">
+        <div className="w-10 h-10 rounded-full border border-white/20 flex items-center justify-center">
+          <div className="w-1 h-1 bg-white rounded-full animate-ping" />
+        </div>
+        <p className="text-[9px] font-medium tracking-[0.3em] text-white/40 uppercase">
+          Drishti Core Active
+        </p>
+      </div>
+    </section>
+  );
+};
+
+// === NEW INDUSTRIAL CLEAN SECURITY SECTION ===
+const IndustrialCleanSecurity = () => {
+  const features = [
+    {
+      title: "On-Device Processing",
+      desc: "Your biometric data never touches our servers. All calculations happen inside your phone's secure chip.",
+      icon: <FiCpu />,
+    },
+    {
+      title: "Zero-Knowledge Proofs",
+      desc: "We verify your identity without ever seeing your actual face data using mathematical proofs.",
+      icon: <FiLock />,
+    },
+    {
+      title: "Liveness Verification",
+      desc: "AI-driven detection prevents spoofing from high-resolution photos, videos, or 3D masks.",
+      icon: <FiEye />,
+    },
+    {
+      title: "Hardware Isolation",
+      desc: "Keys are stored in the Secure Enclave, isolated from the operating system for maximum safety.",
+      icon: <FiShield />,
+    },
+  ];
+
+  return (
+    <section className="py-24 bg-white">
+      <div className="max-w-[1200px] mx-auto px-8">
+        {/* Simple Header */}
+        <div className="mb-20 max-w-2xl">
+          <h2 className="text-sm font-bold tracking-[0.2em] text-indigo-600 uppercase mb-4">
+            Safety First
+          </h2>
+          <h3 className="text-5xl font-bold text-slate-900 tracking-tighter mb-6">
+            Privacy you can trust. <br /> Built for everyone.
+          </h3>
+          <p className="text-lg text-slate-500 font-medium">
+            We&apos;ve engineered DrishtiPay with industry-leading security
+            protocols to ensure your identity and money stay protected at all
+            times.
+          </p>
+        </div>
+
+        {/* The Clean Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {features.map((feat, i) => (
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, y: 10 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: i * 0.1 }}
+              className="p-10 border border-slate-100 bg-white hover:border-indigo-600 transition-colors duration-300 group"
+            >
+              <div className="text-2xl text-slate-400 group-hover:text-indigo-600 transition-colors mb-6">
+                {feat.icon}
+              </div>
+              <h4 className="text-2xl font-bold text-slate-900 mb-3 tracking-tight">
+                {feat.title}
+              </h4>
+              <p className="text-slate-500 leading-relaxed font-medium mb-8">
+                {feat.desc}
+              </p>
+
+              {/* Simple Text Link */}
+              <div className="flex items-center gap-2 text-sm font-bold text-indigo-600 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity">
+                Learn our protocol <FiArrowRight />
+              </div>
+            </motion.div>
+          ))}
+        </div>
+
+        {/* Minimalist Compliance Footer */}
+        <div className="mt-16 pt-10 border-t border-slate-50 flex flex-wrap gap-x-12 gap-y-6">
+          {["ISO 27001", "SOC2 Compliant", "GDPR", "PCI-DSS"].map((tag) => (
+            <span
+              key={tag}
+              className="text-[11px] font-black text-slate-300 tracking-widest uppercase"
+            >
+              {tag}
+            </span>
+          ))}
+        </div>
+      </div>
+    </section>
   );
 };
 
@@ -90,19 +431,18 @@ const Home = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] selection:bg-indigo-100 pb-60 font-sans">
-      {/* --- HERO SECTION --- */}
-      <section className="relative pt-24 pb-32 text-center px-4">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-[800px] bg-[radial-gradient(circle_at_center,_#EEF2FF_0%,_transparent_70%)] -z-10 opacity-70"></div>
-
+    <div className="min-h-screen bg-[#F8FAFC] selection:bg-indigo-100 font-sans">
+      {/* 1. HERO SECTION */}
+      <section className="relative pt-24 pb-12 text-center px-4">
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-[800px] bg-[radial-gradient(circle_at_center,_#EEF2FF_0%,_transparent_70%)] -z-10 opacity-70" />
         <div className="max-w-7xl mx-auto">
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             className="inline-flex items-center gap-2 bg-white border border-indigo-100 text-indigo-600 px-5 py-2 rounded-full text-[12px] font-bold mb-8 shadow-sm"
           >
-            <span className="flex h-2 w-2 rounded-full bg-indigo-600 animate-pulse"></span>
-            V3.0 BIOMETRIC PROTOCOL LIVE
+            <span className="flex h-2 w-2 rounded-full bg-indigo-600 animate-pulse" />
+            V3. 0 BIOMETRIC PROTOCOL LIVE
           </motion.div>
 
           <motion.h1
@@ -120,9 +460,8 @@ const Home = () => {
           </motion.h1>
 
           <p className="text-slate-500 text-[22px] max-w-3xl mx-auto mb-12 font-medium leading-relaxed">
-            DrishtiPay eliminates PINs and passwords. Experience India's first{" "}
-            <br />
-            fully autonomous Face-to-Pay ecosystem.
+            DrishtiPay eliminates PINs and passwords. Experience India&apos;s
+            first fully autonomous Face-to-Pay ecosystem.
           </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 max-w-6xl mx-auto mb-16 px-4">
@@ -152,31 +491,30 @@ const Home = () => {
             />
           </div>
 
-          <div className="flex flex-col sm:row gap-4 justify-center items-center">
+          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
             <button className="bg-slate-900 text-white px-12 py-5 rounded-full font-bold text-[16px] shadow-2xl hover:bg-indigo-600 transition-all hover:scale-105">
               Get Started Now
             </button>
-            <button className="text-slate-600 font-bold hover:text-indigo-600 flex items-center gap-2">
+            <button className="text-slate-600 font-bold hover:text-indigo-600 flex items-center gap-2 transition-colors">
               <FiEye /> View Security Whitepaper
             </button>
           </div>
         </div>
       </section>
 
-      {/* --- STACKED DASHBOARDS --- */}
-      <div className="relative pt-20">
-        {/* DASHBOARD 1: Intelligence Hub */}
+      {/* 2. STACKED DASHBOARDS SECTION */}
+      <div className="relative pt-12 pb-12">
         <DashboardStack index={1}>
           <Sidebar active="Intelligence" />
           <main className="flex-1 p-10 bg-white overflow-y-auto">
             <DashHeader title="Intelligence Hub" />
             <div className="grid grid-cols-3 gap-6 mb-10">
-              <StatCard title="Security Score" value="98.4" suffix="%" />
+              <StatCard title="Security Score" value="98. 4" suffix="%" />
               <StatCard title="Global Nodes" value="1420" />
-              <StatCard title="Active Scans" value="42.1" suffix="k" />
+              <StatCard title="Active Scans" value="42. 1" suffix="k" />
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              <div className="bg-slate-50 rounded-[2.5rem] p-8 h-80">
+              <div className="bg-slate-50 rounded-[2. 5rem] p-8 h-80">
                 <h4 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
                   <FiActivity className="text-indigo-600" /> Traffic Pulse
                 </h4>
@@ -203,7 +541,7 @@ const Home = () => {
                       className="flex items-center justify-between bg-white p-4 rounded-2xl border border-gray-100"
                     >
                       <div className="flex items-center gap-3">
-                        <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                        <div className="w-2 h-2 rounded-full bg-green-500" />
                         <span className="text-sm font-medium text-slate-600">
                           Encrypted Tunnel Node #{i + 120}
                         </span>
@@ -219,7 +557,6 @@ const Home = () => {
           </main>
         </DashboardStack>
 
-        {/* DASHBOARD 2: Neural Vault */}
         <DashboardStack index={2}>
           <Sidebar active="Digital Vault" />
           <main className="flex-1 p-10 bg-slate-900 text-white overflow-y-auto">
@@ -260,7 +597,7 @@ const Home = () => {
                           </div>
                         </div>
                         <p className="font-mono text-indigo-400">
-                          ₹{450 * (i + 1)}.00
+                          ₹{450 * (i + 1)}. 00
                         </p>
                       </div>
                     )
@@ -290,7 +627,6 @@ const Home = () => {
           </main>
         </DashboardStack>
 
-        {/* DASHBOARD 3: Network Nodes */}
         <DashboardStack index={3}>
           <Sidebar active="Nodes" />
           <main className="flex-1 p-10 bg-white overflow-y-auto">
@@ -298,7 +634,7 @@ const Home = () => {
             <div className="grid grid-cols-4 gap-4 mb-8">
               <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100">
                 <FiServer className="text-indigo-600 mb-2" />
-                <p className="text-2xl font-bold">0.04ms</p>
+                <p className="text-2xl font-bold">0. 04ms</p>
                 <p className="text-[10px] text-slate-400 uppercase font-bold">
                   Ping
                 </p>
@@ -319,7 +655,7 @@ const Home = () => {
               </div>
               <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100">
                 <FiTerminal className="text-blue-500 mb-2" />
-                <p className="text-2xl font-bold">4.2TB</p>
+                <p className="text-2xl font-bold">4. 2TB</p>
                 <p className="text-[10px] text-slate-400 uppercase font-bold">
                   Daily Thru
                 </p>
@@ -333,7 +669,7 @@ const Home = () => {
                     "radial-gradient(#4F46E5 1px, transparent 1px)",
                   backgroundSize: "20px 20px",
                 }}
-              ></div>
+              />
               <motion.div
                 animate={{ rotate: 360 }}
                 transition={{ duration: 30, repeat: Infinity, ease: "linear" }}
@@ -358,7 +694,6 @@ const Home = () => {
           </main>
         </DashboardStack>
 
-        {/* DASHBOARD 4: Biometric Analytics */}
         <DashboardStack index={4}>
           <Sidebar active="Analytics" />
           <main className="flex-1 p-10 bg-white">
@@ -377,8 +712,8 @@ const Home = () => {
                       <p>Vector Extraction</p>
                       <p>0.02ms</p>
                     </div>
-                    <div className="w-full bg-white/10 h-1.5 rounded-full overflow-hidden">
-                      <div className="w-[90%] h-full bg-indigo-500"></div>
+                    <div className="w-full bg-white/10 h-1. 5 rounded-full overflow-hidden">
+                      <div className="w-[90%] h-full bg-indigo-500" />
                     </div>
                   </div>
                   <div className="space-y-2">
@@ -387,7 +722,7 @@ const Home = () => {
                       <p>0.01ms</p>
                     </div>
                     <div className="w-full bg-white/10 h-1.5 rounded-full overflow-hidden">
-                      <div className="w-[95%] h-full bg-emerald-500"></div>
+                      <div className="w-[95%] h-full bg-emerald-500" />
                     </div>
                   </div>
                 </div>
@@ -426,18 +761,17 @@ const Home = () => {
           </main>
         </DashboardStack>
 
-        {/* DASHBOARD 5: Global Compliance */}
         <DashboardStack index={5}>
           <Sidebar active="Compliance" />
           <main className="flex-1 p-10 bg-[#0F172A] text-white overflow-y-auto">
             <DashHeader title="Trust & Compliance" isDark />
             <div className="grid grid-cols-3 gap-6">
               <ComplianceCard title="GDPR Ready" status="Certified" />
-              <ComplianceCard title="PCI-DSS v4.0" status="Verified" />
+              <ComplianceCard title="PCI-DSS v4. 0" status="Verified" />
               <ComplianceCard title="ISO 27001" status="Active" />
             </div>
             <div className="mt-10 bg-white/5 rounded-[3rem] p-12 border border-white/10 text-center relative overflow-hidden">
-              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 via-emerald-500 to-indigo-500"></div>
+              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 via-emerald-500 to-indigo-500" />
               <div className="w-20 h-20 bg-emerald-500/20 text-emerald-500 rounded-full flex items-center justify-center mx-auto mb-6">
                 <FiCheckCircle size={40} />
               </div>
@@ -460,12 +794,20 @@ const Home = () => {
           </main>
         </DashboardStack>
       </div>
+
+      {/* 3. HYPER PERFECT REVEAL */}
+      <HyperPerfectReveal />
+
+      {/* 4. AESTHETIC SPLIT REVEAL (How It Works) */}
+      <AestheticSplitReveal />
+
+      {/* 5. INDUSTRIAL CLEAN SECURITY (NEW SECTION) */}
+      <IndustrialCleanSecurity />
     </div>
   );
 };
 
-// --- SUB-COMPONENTS ---
-
+// --- ALL SUB-COMPONENTS ---
 const HeroFeature = ({ icon, title, desc, color }) => (
   <div className="bg-white p-6 rounded-[2.5rem] border border-gray-100 shadow-sm text-left hover:shadow-md transition-all hover:-translate-y-1">
     <div className={`${color} mb-3 text-2xl`}>{icon}</div>
@@ -512,7 +854,7 @@ const Sidebar = ({ active }) => (
         System Status
       </p>
       <p className="text-xs font-bold text-emerald-500 mt-1 flex items-center gap-2">
-        <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>{" "}
+        <span className="w-2 h-2 bg-emerald-500 rounded-full animate-ping" />
         All Nodes Live
       </p>
     </div>
