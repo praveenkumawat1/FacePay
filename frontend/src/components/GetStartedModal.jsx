@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { registerUser } from "../services/api";
 
 import PersonalInfoStep from "./flow/PersonalInfoStep";
 import PasswordStep from "./flow/PasswordStep";
@@ -18,13 +19,90 @@ const slideVariants = {
 const GetStartedModal = ({ close }) => {
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
-  const next = (data) => {
-    setFormData({ ...formData, ...data });
-    setStep((prev) => prev + 1);
+  const next = async (data) => {
+    console.log(`📥 Step ${step} data received:`, data);
+
+    const updatedData = { ...formData, ...data };
+    setFormData(updatedData);
+
+    console.log("📦 Updated formData:", {
+      ...updatedData,
+      password: updatedData.password ? "***" : undefined,
+      faceImage: updatedData.faceImage
+        ? `File: ${updatedData.faceImage.name}`
+        : undefined,
+    });
+
+    // If this is Face Scan step (step 4), submit to backend
+    if (step === 4) {
+      console.log(
+        "🎯 Face scan complete - Starting registration submission..."
+      );
+      await submitRegistration(updatedData);
+    } else {
+      console.log(`➡️  Moving to step ${step + 1}`);
+      setStep((prev) => prev + 1);
+    }
   };
 
-  const back = () => setStep((prev) => prev - 1);
+  const back = () => {
+    console.log(`⬅️  Moving back to step ${step - 1}`);
+    setStep((prev) => prev - 1);
+  };
+
+  const submitRegistration = async (data) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      console.log("═══════════════════════════════════════");
+      console.log("🚀 SUBMITTING REGISTRATION");
+      console.log("═══════════════════════════════════════");
+
+      // Validation
+      if (!data.faceImage) {
+        throw new Error(
+          "Face image not captured.  Please go back and scan your face."
+        );
+      }
+
+      if (!(data.faceImage instanceof File)) {
+        throw new Error("Invalid face image format. Please try again.");
+      }
+
+      console.log("✅ Validation passed");
+      console.log("📤 Calling registerUser API...");
+
+      const result = await registerUser(data);
+
+      console.log("═══════════════════════════════════════");
+      console.log("✅ REGISTRATION SUCCESSFUL");
+      console.log("═══════════════════════════════════════");
+      console.log("Token:", result.token);
+      console.log("User:", result.user);
+
+      // Save token and user data
+      localStorage.setItem("facepay_token", result.token);
+      localStorage.setItem("facepay_user", JSON.stringify(result.user));
+
+      console.log("💾 Data saved to localStorage");
+
+      // Move to success step
+      setStep(5);
+    } catch (err) {
+      console.error("═══════════════════════════════════════");
+      console.error("❌ REGISTRATION FAILED");
+      console.error("═══════════════════════════════════════");
+      console.error("Error:", err);
+
+      setError(err.message || "Registration failed. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-md flex items-center justify-center z-50 px-4">
@@ -76,7 +154,7 @@ const GetStartedModal = ({ close }) => {
                         : "bg-gray-200 text-gray-500"
                     }`}
                 >
-                  {i + 1 <= step ? i + 1 : i + 1}
+                  {i + 1}
                 </div>
                 <p
                   className={`mt-3 text-xs font-medium transition-colors duration-300
@@ -89,6 +167,28 @@ const GetStartedModal = ({ close }) => {
             ))}
           </div>
         </div>
+
+        {/* Error Message */}
+        {error && (
+          <div className="px-8 mb-4">
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+              <p className="text-red-700 text-sm font-medium">❌ {error}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Loading Overlay */}
+        {loading && (
+          <div className="absolute inset-0 bg-white/90 backdrop-blur-sm flex items-center justify-center z-50 rounded-3xl">
+            <div className="text-center">
+              <div className="w-16 h-16 border-4 border-black border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+              <p className="text-lg font-semibold text-gray-900">
+                Creating your account...
+              </p>
+              <p className="text-sm text-gray-600 mt-2">Please wait</p>
+            </div>
+          </div>
+        )}
 
         {/* Step Content with Smooth Animation */}
         <div className="px-8 pb-10 min-h-96">
