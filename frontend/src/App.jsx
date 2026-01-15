@@ -3,7 +3,8 @@ import { useState } from "react";
 import Navbar from "./components/Navbar";
 import AuthModal from "./components/AuthModal";
 import GetStartedModal from "./components/GetStartedModal";
-import Home from "./pages/Home"; // ← yeh sahi import hai
+import Home from "./pages/Home";
+import Dashboard from "./pages/Dashboard";
 
 function App() {
   const [showLogin, setShowLogin] = useState(false);
@@ -12,23 +13,42 @@ function App() {
   return (
     <BrowserRouter>
       <div className="min-h-screen bg-gray-50">
-        {/* Navbar hamesha dikhega */}
-        <Navbar
-          openLogin={() => setShowLogin(true)}
-          openGetStarted={() => setShowGetStarted(true)}
-        />
-
-        {/* Home page ab yahan show hoga */}
+        {/* Routes */}
         <Routes>
-          <Route path="/" element={<Home />} />
-          {/* agar future mein aur pages add karna ho toh yahan likh dena */}
+          {/* Home Page with Navbar */}
+          <Route
+            path="/"
+            element={
+              <>
+                <Navbar
+                  openLogin={() => setShowLogin(true)}
+                  openGetStarted={() => setShowGetStarted(true)}
+                />
+                <Home />
+              </>
+            }
+          />
+
+          {/* Dashboard Page (No Navbar) */}
+          <Route path="/dashboard" element={<Dashboard />} />
+
+          {/* Future routes */}
           {/* <Route path="/about" element={<About />} /> */}
+          {/* <Route path="/contact" element={<Contact />} /> */}
         </Routes>
 
-        {/* Login popup */}
-        {showLogin && <AuthModal closeModal={() => setShowLogin(false)} />}
+        {/* Login Modal */}
+        {showLogin && (
+          <AuthModal
+            closeModal={() => setShowLogin(false)}
+            switchToSignup={() => {
+              setShowLogin(false);
+              setShowGetStarted(true);
+            }}
+          />
+        )}
 
-        {/* Get Started popup */}
+        {/* Get Started (Signup) Modal */}
         {showGetStarted && (
           <GetStartedModal close={() => setShowGetStarted(false)} />
         )}
@@ -36,5 +56,4 @@ function App() {
     </BrowserRouter>
   );
 }
-
 export default App;

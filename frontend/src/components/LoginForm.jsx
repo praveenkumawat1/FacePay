@@ -1,11 +1,19 @@
 import { useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
+import { loginUser } from "../services/api";
 
 const LoginForm = ({ onClose, switchToSignup, onForgotPassword }) => {
+  const navigate = useNavigate();
+
   const [showPassword, setShowPassword] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [inputText, setInputText] = useState("");
   const [challengeText, setChallengeText] = useState("");
   const [isVerified, setIsVerified] = useState(false);
-  const [error, setError] = useState(false);
+  const [captchaError, setCaptchaError] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [loginError, setLoginError] = useState(null);
 
   const canvasRef = useRef(null);
 
@@ -18,7 +26,7 @@ const LoginForm = ({ onClose, switchToSignup, onForgotPassword }) => {
     setChallengeText(text);
     setInputText("");
     setIsVerified(false);
-    setError(false);
+    setCaptchaError(false);
   };
 
   useEffect(() => {
@@ -33,7 +41,6 @@ const LoginForm = ({ onClose, switchToSignup, onForgotPassword }) => {
     ctx.fillStyle = "#f8fafc";
     ctx.fillRect(0, 0, width, height);
 
-    // Light noise
     for (let i = 0; i < 35; i++) {
       ctx.fillStyle = "rgba(0,0,0,0.05)";
       ctx.fillRect(Math.random() * width, Math.random() * height, 2, 2);
@@ -55,7 +62,6 @@ const LoginForm = ({ onClose, switchToSignup, onForgotPassword }) => {
       ctx.restore();
     });
 
-    // Subtle lines
     ctx.strokeStyle = "rgba(0,0,0,0.08)";
     ctx.lineWidth = 1.5;
     for (let i = 0; i < 2; i++) {
@@ -74,57 +80,111 @@ const LoginForm = ({ onClose, switchToSignup, onForgotPassword }) => {
     if (inputText.length === challengeText.length && inputText) {
       if (inputText.toUpperCase() === challengeText) {
         setIsVerified(true);
-        setError(false);
+        setCaptchaError(false);
       } else {
-        setError(true);
+        setCaptchaError(true);
       }
     } else if (inputText.length > 0) {
-      setError(false);
+      setCaptchaError(false);
     }
   }, [inputText, challengeText]);
 
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setLoginError(null);
+
+    console.log("🔐 Login attempt:", {
+      email,
+      password: "***",
+      captchaVerified: isVerified,
+    });
+
+    if (!email || !password) {
+      setLoginError("Please enter email and password");
+      return;
+    }
+
+    if (!isVerified) {
+      setLoginError("Please complete the CAPTCHA verification");
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      console.log("📤 Calling login API...");
+
+      const result = await loginUser(email, password);
+
+      console.log("✅ Login successful:", result);
+
+      localStorage.setItem("facepay_token", result.token);
+      localStorage.setItem("facepay_user", JSON.stringify(result.user));
+
+      console.log("💾 Data saved to localStorage");
+
+      onClose();
+
+      setTimeout(() => {
+        alert(`Welcome back, ${result.user.full_name}!  🎉`);
+        navigate("/dashboard");
+      }, 100);
+    } catch (err) {
+      console.error("❌ Login failed:", err);
+      setLoginError(err.message || "Login failed. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-md flex items-center justify-center z-50 px-4">
-      {/* Wide but Super Compact Card */}
-      <div className="relative bg-white/95 backdrop-blur-xl w-full max-w-lg rounded-2xl shadow-2xl border border-white/30 overflow-hidden">
-        {/* Close Button */}
-        <button
-          onClick={onClose}
-          className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full bg-gray-100/80 hover:bg-gray-200 text-gray-600 hover:text-black transition flex items-center justify-center"
-        >
-          ✕
-        </button>
-
-        {/* Super Tight Padding */}
-        <div className="px-8 py-7">
-          {/* Header - Compact */}
-          <div className="text-center mb-4">
-            <h2 className="text-2xl font-bold text-gray-900">Welcome back</h2>
-            <p className="text-sm text-gray-600 mt-1">
-              Login to <span className="font-semibold text-black">FacePay</span>
-            </p>
+    <>
+      {loading && (
+        <div className="absolute inset-0 bg-white/90 backdrop-blur-sm flex items-center justify-center z-50 rounded-2xl">
+          <div className="text-center">
+            <div className="w-16 h-16 border-4 border-black border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-lg font-semibold text-gray-900">Logging in...</p>
           </div>
+        </div>
+      )}
 
-          {/* Email */}
-          <div className="mb-3.5">
+      <div className="px-8 py-7">
+        <div className="text-center mb-4">
+          <h2 className="text-2xl font-bold text-gray-900">Welcome back</h2>
+          <p className="text-sm text-gray-600 mt-1">
+            Login to <span className="font-semibold text-black">FacePay</span>
+          </p>
+        </div>
+
+        {loginError && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl">
+            <p className="text-red-700 text-sm font-medium">❌ {loginError}</p>
+          </div>
+        )}
+
+        <form onSubmit={handleLogin}>
+          <div className="mb-3. 5">
             <label className="text-sm font-medium text-gray-700 block mb-1">
               Email or Username
             </label>
             <input
-              type="text"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
               className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50/70 
                          focus:outline-none focus:ring-4 focus:ring-black/10 focus:border-black transition"
+              required
             />
           </div>
 
-          {/* Password */}
           <div className="mb-3.5">
             <div className="flex justify-between items-end mb-1">
               <label className="text-sm font-medium text-gray-700">
                 Password
               </label>
               <button
+                type="button"
                 onClick={onForgotPassword}
                 className="text-sm font-medium text-black hover:underline transition"
               >
@@ -134,9 +194,12 @@ const LoginForm = ({ onClose, switchToSignup, onForgotPassword }) => {
             <div className="relative">
               <input
                 type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
                 placeholder="Enter password"
                 className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50/70 
                            focus:outline-none focus:ring-4 focus:ring-black/10 focus:border-black transition pr-14"
+                required
               />
               <button
                 type="button"
@@ -148,13 +211,13 @@ const LoginForm = ({ onClose, switchToSignup, onForgotPassword }) => {
             </div>
           </div>
 
-          {/* CAPTCHA - Compact */}
           <div className="mb-4">
             <div className="flex items-center justify-between mb-1.5">
               <p className="text-sm font-medium text-gray-700">
                 Verify you're human
               </p>
               <button
+                type="button"
                 onClick={generateChallenge}
                 className="text-xs text-gray-500 hover:text-black underline transition"
               >
@@ -182,7 +245,7 @@ const LoginForm = ({ onClose, switchToSignup, onForgotPassword }) => {
                            ${
                              isVerified
                                ? "border-green-500"
-                               : error
+                               : captchaError
                                ? "border-red-500"
                                : "border-gray-200"
                            }`}
@@ -193,57 +256,58 @@ const LoginForm = ({ onClose, switchToSignup, onForgotPassword }) => {
                 </span>
               )}
             </div>
-            {error && (
-              <p className="text-xs text-red-600 mt-1 text-center">Incorrect</p>
+            {captchaError && (
+              <p className="text-xs text-red-600 mt-1 text-center">
+                Incorrect CAPTCHA
+              </p>
             )}
           </div>
 
-          {/* Login Button */}
           <button
-            disabled={!isVerified}
+            type="submit"
+            disabled={!isVerified || loading}
             className={`w-full py-3 rounded-xl font-semibold text-lg transition-all duration-300
               ${
-                isVerified
+                isVerified && !loading
                   ? "bg-black text-white hover:bg-gray-900 shadow-lg hover:shadow-xl hover:-translate-y-0.5"
                   : "bg-gray-200 text-gray-500 cursor-not-allowed"
               }`}
           >
-            Login
+            {loading ? "Logging in..." : "Login"}
           </button>
+        </form>
 
-          {/* OR Divider */}
-          <div className="relative my-4">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-300"></div>
-            </div>
-            <div className="relative flex justify-center text-sm">
-              <span className="px-3 bg-white/95 text-gray-500 font-medium">
-                OR
-              </span>
-            </div>
+        <div className="relative my-4">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-gray-300"></div>
           </div>
-
-          {/* Face Login */}
-          <button
-            className="w-full py-3 rounded-xl border-2 border-black bg-transparent font-semibold text-black 
-                             hover:bg-black hover:text-white transition-all duration-300 shadow-md hover:shadow-lg"
-          >
-            Login with Face
-          </button>
-
-          {/* Footer */}
-          <p className="text-center text-sm text-gray-600 mt-4">
-            New here?{" "}
-            <button
-              onClick={switchToSignup}
-              className="font-semibold text-black hover:underline transition"
-            >
-              Create account
-            </button>
-          </p>
+          <div className="relative flex justify-center text-sm">
+            <span className="px-3 bg-white/95 text-gray-500 font-medium">
+              OR
+            </span>
+          </div>
         </div>
+
+        <button
+          type="button"
+          onClick={() => alert("Face login coming soon!  🚀")}
+          className="w-full py-3 rounded-xl border-2 border-black bg-transparent font-semibold text-black 
+                     hover:bg-black hover:text-white transition-all duration-300 shadow-md hover:shadow-lg"
+        >
+          Login with Face
+        </button>
+
+        <p className="text-center text-sm text-gray-600 mt-4">
+          New here?{" "}
+          <button
+            onClick={switchToSignup}
+            className="font-semibold text-black hover:underline transition"
+          >
+            Create account
+          </button>
+        </p>
       </div>
-    </div>
+    </>
   );
 };
 
