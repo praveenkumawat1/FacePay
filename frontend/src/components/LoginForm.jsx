@@ -1,10 +1,15 @@
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
+import OTPVerifyStep from "./OTPVerifyStep";
 import { useNavigate } from "react-router-dom";
-import { loginUser } from "../services/api";
 
 const LoginForm = ({ onClose, switchToSignup, onForgotPassword }) => {
   const navigate = useNavigate();
 
+  // Steps: 1 = login, 2 = OTP
+  const [step, setStep] = useState(1);
+  const [userForOtp, setUserForOtp] = useState(null);
+
+  // Login form states
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -17,7 +22,8 @@ const LoginForm = ({ onClose, switchToSignup, onForgotPassword }) => {
 
   const canvasRef = useRef(null);
 
-  const generateChallenge = () => {
+  // CAPTCHA logic
+  function generateChallenge() {
     const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     let text = "";
     for (let i = 0; i < 5; i++) {
@@ -27,11 +33,13 @@ const LoginForm = ({ onClose, switchToSignup, onForgotPassword }) => {
     setInputText("");
     setIsVerified(false);
     setCaptchaError(false);
-  };
+  }
 
   useEffect(() => {
+    generateChallenge();
+  }, []);
+  useEffect(() => {
     if (!canvasRef.current || !challengeText) return;
-
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
     const width = 300;
@@ -49,12 +57,10 @@ const LoginForm = ({ onClose, switchToSignup, onForgotPassword }) => {
     ctx.font = "bold 28px monospace";
     ctx.fillStyle = "#1e293b";
     ctx.textBaseline = "middle";
-
     const letterSpacing = width / (challengeText.length + 1);
     challengeText.split("").forEach((char, i) => {
       const x = letterSpacing * (i + 1);
       const y = height / 2 + Math.sin(i) * 4;
-
       ctx.save();
       ctx.translate(x, y);
       ctx.rotate((Math.random() - 0.5) * 0.25);
@@ -71,11 +77,6 @@ const LoginForm = ({ onClose, switchToSignup, onForgotPassword }) => {
       ctx.stroke();
     }
   }, [challengeText]);
-
-  useEffect(() => {
-    generateChallenge();
-  }, []);
-
   useEffect(() => {
     if (inputText.length === challengeText.length && inputText) {
       if (inputText.toUpperCase() === challengeText) {
@@ -89,54 +90,52 @@ const LoginForm = ({ onClose, switchToSignup, onForgotPassword }) => {
     }
   }, [inputText, challengeText]);
 
-  const handleLogin = async (e) => {
+  // Step 1 submit
+  const handleLogin = (e) => {
     e.preventDefault();
     setLoginError(null);
-
-    console.log("🔐 Login attempt:", {
-      email,
-      password: "***",
-      captchaVerified: isVerified,
-    });
 
     if (!email || !password) {
       setLoginError("Please enter email and password");
       return;
     }
-
     if (!isVerified) {
       setLoginError("Please complete the CAPTCHA verification");
       return;
     }
-
     setLoading(true);
 
-    try {
-      console.log("📤 Calling login API...");
-
-      const result = await loginUser(email, password);
-
-      console.log("✅ Login successful:", result);
-
-      localStorage.setItem("facepay_token", result.token);
-      localStorage.setItem("facepay_user", JSON.stringify(result.user));
-
-      console.log("💾 Data saved to localStorage");
-
-      onClose();
-
-      setTimeout(() => {
-        alert(`Welcome back, ${result.user.full_name}!  🎉`);
-        navigate("/dashboard");
-      }, 100);
-    } catch (err) {
-      console.error("❌ Login failed:", err);
-      setLoginError(err.message || "Login failed. Please try again.");
-    } finally {
+    // Demo "login": OTP step
+    setTimeout(() => {
       setLoading(false);
-    }
+      setUserForOtp({
+        email,
+        full_name: email.split("@")[0] || "User",
+        token: "test-token-abcde",
+      });
+      setStep(2);
+    }, 900);
   };
 
+  // OTP Step
+  if (step === 2 && userForOtp) {
+    return (
+      <OTPVerifyStep
+        email={userForOtp.email}
+        back={() => setStep(1)}
+        next={() => {
+          // Localstorage set (demo), then dashboard
+          localStorage.setItem("facepay_token", userForOtp.token);
+          localStorage.setItem("facepay_user", JSON.stringify(userForOtp));
+          if (onClose) onClose();
+          navigate("/dashboard");
+        }}
+        onEditContact={() => setStep(1)}
+      />
+    );
+  }
+
+  // Login Step
   return (
     <>
       {loading && (
@@ -163,7 +162,7 @@ const LoginForm = ({ onClose, switchToSignup, onForgotPassword }) => {
         )}
 
         <form onSubmit={handleLogin}>
-          <div className="mb-3. 5">
+          <div className="mb-3.5">
             <label className="text-sm font-medium text-gray-700 block mb-1">
               Email or Username
             </label>
@@ -246,8 +245,8 @@ const LoginForm = ({ onClose, switchToSignup, onForgotPassword }) => {
                              isVerified
                                ? "border-green-500"
                                : captchaError
-                               ? "border-red-500"
-                               : "border-gray-200"
+                                 ? "border-red-500"
+                                 : "border-gray-200"
                            }`}
               />
               {isVerified && (

@@ -26,14 +26,14 @@ const upload = multer({
   fileFilter: (req, file, cb) => {
     const allowedTypes = /jpeg|jpg|png/;
     const extname = allowedTypes.test(
-      path.extname(file.originalname).toLowerCase()
+      path.extname(file.originalname).toLowerCase(),
     );
     const mimetype = allowedTypes.test(file.mimetype);
 
     if (extname && mimetype) {
       cb(null, true);
     } else {
-      cb(new Error("Only . jpg, .jpeg, . png images are allowed"));
+      cb(new Error("Only .jpg, .jpeg, .png images are allowed"));
     }
   },
 });
@@ -42,9 +42,17 @@ const upload = multer({
 router.post(
   "/register",
   upload.single("face_image"),
-  authController.registerUser
+  authController.registerUser,
 );
 router.post("/login", authController.loginUser);
+
+// ====== TOTP (Google Authenticator 2FA) ======
+// 2FA Setup QR/Secret (Protected)
+router.get("/totp/setup", authMiddleware, authController.getTotpSetup);
+// 2FA Verify user code during enabling (Protected)
+router.post("/totp/verify", authMiddleware, authController.verifyTotp);
+// 2FA Login code validation (Public, after email/password step)
+router.post("/totp/login", authController.loginWithTotp);
 
 // Protected routes
 router.get("/profile", authMiddleware, authController.getProfile);

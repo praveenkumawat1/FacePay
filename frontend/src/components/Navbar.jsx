@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { motion } from "framer-motion"; // Framer Motion added
+import { motion } from "framer-motion";
 import {
   FiArrowRight,
   FiEye,
@@ -12,81 +12,112 @@ import {
 const Navbar = ({ openLogin, openGetStarted }) => {
   return (
     <motion.div
-      initial={{ y: -50, opacity: 0 }}
+      initial={{ y: -60, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
-      transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-      className="w-full flex justify-center pt-8 pb-4 px-4 bg-transparent sticky top-0 z-50"
+      transition={{ duration: 1, ease: [0.16, 1, 0.3, 1] }}
+      className="w-full flex justify-center pt-8 pb-5 px-5 md:px-6 bg-transparent sticky top-0 z-50"
     >
       <nav
-        className="
-        flex items-center justify-between 
-        w-full max-w-6xl
-        px-10 py-3
-        rounded-full 
-        bg-white/75 backdrop-blur-xl
-        border border-gray-100/60
-        shadow-[0_8px_30px_rgb(0,0,0,0.04)]
-      "
+        className={`
+          flex items-center justify-between
+          w-full max-w-7xl
+          px-8 sm:px-10 lg:px-12 py-4
+          rounded-full
+          bg-white/70 backdrop-blur-2xl
+          border border-white/60
+          shadow-[0_12px_40px_-8px_rgba(0,0,0,0.08),0_4px_20px_-4px_rgba(0,0,0,0.04)]
+          transition-all duration-500
+        `}
       >
-        {/* --- LOGO: Smooth Hover Animation --- */}
-        <motion.div
-          whileHover={{ scale: 1.02 }}
-          className="flex items-center gap-3 group cursor-pointer"
-        >
-          <div className="flex items-center justify-center w-8 h-8 bg-slate-900 rounded-lg group-hover:bg-indigo-600 transition-all duration-500 shadow-sm">
-            <FiEye className="text-white text-sm" />
-          </div>
-          <span className="text-[19px] tracking-tight text-slate-800 font-medium italic">
-            Drishti
-            <span className="text-indigo-600 font-semibold not-italic">
-              Pay
+        {/* LOGO – more premium feel */}
+        <Link to="/">
+          <motion.div
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.98 }}
+            className="flex items-center gap-3.5 group cursor-pointer"
+          >
+            <div className="relative flex items-center justify-center w-9 h-9 bg-gradient-to-br from-slate-950 to-slate-800 rounded-xl overflow-hidden shadow-md group-hover:shadow-indigo-500/30 transition-all duration-500">
+              <div className="absolute inset-0 bg-gradient-to-tr from-indigo-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
+              <FiEye className="text-white text-base relative z-10" />
+            </div>
+            <span className="text-[22px] tracking-tight font-semibold text-slate-900">
+              Drishti
+              <span className="text-indigo-600 font-bold">Pay</span>
             </span>
-          </span>
-        </motion.div>
+          </motion.div>
+        </Link>
 
-        {/* --- CENTER LINKS: Staggered Entrance --- */}
-        <div className="hidden lg:flex items-center gap-1">
-          <NavLink label="How it works" to="/" delay={0.1} />
-          <NavLink label="Security" to="/" icon={<FiLock />} delay={0.2} />
-          <NavLink label="Features" to="/" icon={<FiZap />} delay={0.3} />
-          <NavLink label="Solutions" to="/" icon={<FiLayers />} delay={0.4} />
-          <NavLink label="Support" to="/" icon={<FiHelpCircle />} delay={0.5} />
+        {/* Center links – more elegant spacing & hover */}
+        <div className="hidden lg:flex items-center gap-2 xl:gap-3">
+          <PremiumNavLink label="How it works" to="/" delay={0.12} />
+          <PremiumNavLink
+            label="Security"
+            to="/"
+            icon={<FiLock />}
+            delay={0.18}
+          />
+          <PremiumNavLink
+            label="Features"
+            to="/"
+            icon={<FiZap />}
+            delay={0.24}
+          />
+          <PremiumNavLink
+            label="Solutions"
+            to="/"
+            icon={<FiLayers />}
+            delay={0.3}
+          />
+          <PremiumNavLink
+            label="Support"
+            to="/"
+            icon={<FiHelpCircle />}
+            delay={0.36}
+          />
         </div>
 
-        {/* --- ACTIONS --- */}
-        <div className="flex items-center gap-6">
+        {/* Actions – bigger, more premium buttons */}
+        <div className="flex items-center gap-5 sm:gap-6">
           <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            type="button"
-            onClick={() => openLogin?.()}
-            className="text-[13px] font-semibold text-slate-600 hover:text-indigo-600 transition-colors"
+            whileHover={{ scale: 1.04, color: "#4f46e5" }}
+            whileTap={{ scale: 0.97 }}
+            onClick={openLogin}
+            className={`
+              text-sm font-medium tracking-wide
+              text-slate-700 hover:text-indigo-600
+              px-5 py-2.5 rounded-full
+              transition-all duration-300
+              hover:bg-indigo-50/60
+            `}
           >
-            Login
+            Log in
           </motion.button>
 
           <motion.button
             whileHover={{
-              scale: 1.05,
-              backgroundColor: "#4f46e5", // Indigo-600
-              boxShadow: "0 10px 20px -5px rgba(79, 70, 229, 0.4)",
+              scale: 1.06,
+              background: "linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)",
+              boxShadow: "0 14px 30px -8px rgba(79, 70, 229, 0.45)",
             }}
-            whileTap={{ scale: 0.98 }}
-            type="button"
-            onClick={() => openGetStarted?.()}
-            className="
-              group
-              flex items-center gap-2
-              px-6 py-2.5 
+            whileTap={{ scale: 0.97 }}
+            onClick={openGetStarted}
+            className={`
+              group relative
+              flex items-center gap-2.5
+              px-7 py-3
               rounded-full
-              bg-slate-900 
-              text-white font-semibold text-[13px]
-              transition-all duration-300
-              shadow-lg shadow-slate-200/50
-            "
+              bg-gradient-to-r from-slate-950 to-slate-900
+              text-white font-semibold text-sm tracking-wide
+              shadow-xl shadow-slate-200/40
+              transition-all duration-400
+              overflow-hidden
+            `}
           >
-            Get Started
-            <FiArrowRight className="text-[14px] group-hover:translate-x-1 transition-transform" />
+            <span className="relative z-10">Get Started</span>
+            <FiArrowRight className="text-base relative z-10 group-hover:translate-x-1.5 transition-transform duration-300" />
+
+            {/* Shine effect on hover */}
+            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700 ease-out" />
           </motion.button>
         </div>
       </nav>
@@ -94,31 +125,36 @@ const Navbar = ({ openLogin, openGetStarted }) => {
   );
 };
 
-// Helper with Motion
-const NavLink = ({ label, to, icon, delay }) => (
+// More premium NavLink variant
+const PremiumNavLink = ({ label, to, icon, delay }) => (
   <motion.div
-    initial={{ opacity: 0, y: -10 }}
+    initial={{ opacity: 0, y: -12 }}
     animate={{ opacity: 1, y: 0 }}
-    transition={{ delay, duration: 0.5 }}
+    transition={{ delay, duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
   >
     <Link
       to={to}
-      className="
-        group
+      className={`
+        group relative
         flex items-center gap-2
-        px-4 py-2
+        px-5 py-2.5
         rounded-full
-        text-[13px] font-medium text-slate-500
-        hover:text-slate-900 hover:bg-gray-50/50
+        text-sm font-medium text-slate-600
+        hover:text-slate-900
         transition-all duration-300
-      "
+        hover:bg-white/60
+        active:scale-97
+      `}
     >
       {icon && (
-        <span className="text-[12px] text-slate-400 group-hover:text-indigo-600 transition-colors">
+        <span className="text-[13px] text-slate-400 group-hover:text-indigo-500 transition-colors duration-300">
           {icon}
         </span>
       )}
       {label}
+
+      {/* Underline glow effect */}
+      <span className="absolute bottom-1.5 left-1/2 -translate-x-1/2 w-0 h-0.5 bg-indigo-500/60 rounded-full group-hover:w-5/12 group-hover:opacity-70 transition-all duration-400 ease-out" />
     </Link>
   </motion.div>
 );

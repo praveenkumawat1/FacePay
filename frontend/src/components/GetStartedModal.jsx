@@ -6,9 +6,10 @@ import PersonalInfoStep from "./flow/PersonalInfoStep";
 import PasswordStep from "./flow/PasswordStep";
 import BankDetailsStep from "./flow/BankDetailsStep";
 import FaceScanStep from "./flow/FaceScanStep";
+import OTPVerifyStep from "./flow/OTPVerifyStep"; // ⬅️ New Step Import
 import CompleteStep from "./flow/CompleteStep";
 
-const steps = ["Personal", "Security", "Bank", "Face", "Done"];
+const steps = ["Personal", "Security", "Bank", "Face", "Verify OTP", "Done"];
 
 const slideVariants = {
   initial: { opacity: 0, x: 50 },
@@ -22,82 +23,56 @@ const GetStartedModal = ({ close }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  const next = async (data) => {
-    console.log(`📥 Step ${step} data received:`, data);
-
+  // Moves to next step, collects form data
+  const next = async (data, skipRegistration = false) => {
     const updatedData = { ...formData, ...data };
     setFormData(updatedData);
 
-    console.log("📦 Updated formData:", {
-      ...updatedData,
-      password: updatedData.password ? "***" : undefined,
-      faceImage: updatedData.faceImage
-        ? `File: ${updatedData.faceImage.name}`
-        : undefined,
-    });
-
-    // If this is Face Scan step (step 4), submit to backend
+    // If this is Face Scan step (step 4), move to OTP step (5)
     if (step === 4) {
-      console.log(
-        "🎯 Face scan complete - Starting registration submission..."
-      );
+      // Don't submit registration yet, go to OTP step
+      setStep(5);
+    }
+    // If OTP step is done, finally submit registration (step === 5)
+    else if (step === 5) {
+      // Registration form submit after OTP verification OK
       await submitRegistration(updatedData);
     } else {
-      console.log(`➡️  Moving to step ${step + 1}`);
       setStep((prev) => prev + 1);
     }
   };
 
   const back = () => {
-    console.log(`⬅️  Moving back to step ${step - 1}`);
+    setError(null);
     setStep((prev) => prev - 1);
   };
 
+  // Registration submit to backend ONLY after OTP step!
   const submitRegistration = async (data) => {
     setLoading(true);
     setError(null);
 
     try {
-      console.log("═══════════════════════════════════════");
-      console.log("🚀 SUBMITTING REGISTRATION");
-      console.log("═══════════════════════════════════════");
-
-      // Validation
-      if (!data.faceImage) {
+      if (!data.faceImage || !(data.faceImage instanceof File)) {
         throw new Error(
-          "Face image not captured.  Please go back and scan your face."
+          "Face image not captured or invalid. Go back and scan your face.",
         );
       }
 
-      if (!(data.faceImage instanceof File)) {
-        throw new Error("Invalid face image format. Please try again.");
-      }
-
-      console.log("✅ Validation passed");
-      console.log("📤 Calling registerUser API...");
-
+      // Now submit registration API
       const result = await registerUser(data);
-
-      console.log("═══════════════════════════════════════");
-      console.log("✅ REGISTRATION SUCCESSFUL");
-      console.log("═══════════════════════════════════════");
-      console.log("Token:", result.token);
-      console.log("User:", result.user);
 
       // Save token and user data
       localStorage.setItem("facepay_token", result.token);
       localStorage.setItem("facepay_user", JSON.stringify(result.user));
 
-      console.log("💾 Data saved to localStorage");
+      // Move to CompleteStep
+      setStep(6);
 
-      // Move to success step
-      setStep(5);
+      setTimeout(() => {
+        window.location.href = "/dashboard";
+      }, 1200);
     } catch (err) {
-      console.error("═══════════════════════════════════════");
-      console.error("❌ REGISTRATION FAILED");
-      console.error("═══════════════════════════════════════");
-      console.error("Error:", err);
-
       setError(err.message || "Registration failed. Please try again.");
     } finally {
       setLoading(false);
@@ -205,7 +180,15 @@ const GetStartedModal = ({ close }) => {
               {step === 2 && <PasswordStep next={next} back={back} />}
               {step === 3 && <BankDetailsStep next={next} back={back} />}
               {step === 4 && <FaceScanStep next={next} back={back} />}
-              {step === 5 && <CompleteStep closeModal={close} />}
+              {step === 5 && (
+                <OTPVerifyStep
+                  email={formData.email}
+                  mobile={formData.mobile}
+                  next={(otpData) => next(otpData)} // advance to registration on verify
+                  back={back}
+                />
+              )}
+              {step === 6 && <CompleteStep closeModal={close} />}
             </motion.div>
           </AnimatePresence>
         </div>

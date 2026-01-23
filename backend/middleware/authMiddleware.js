@@ -1,6 +1,7 @@
 const jwt = require("jsonwebtoken");
+const User = require("../models/User");
 
-const authMiddleware = (req, res, next) => {
+const authMiddleware = async (req, res, next) => {
   try {
     const authHeader = req.header("Authorization");
 
@@ -14,8 +15,17 @@ const authMiddleware = (req, res, next) => {
     const token = authHeader.replace("Bearer ", "");
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded;
 
+    // Get the actual user from DB & attach to req.user!
+    // (Ensures you have all fields, like email needed for QR)
+    const user = await User.findById(decoded.user_id);
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+    req.user = user;
     next();
   } catch (error) {
     res.status(401).json({

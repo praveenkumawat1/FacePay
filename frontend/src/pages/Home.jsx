@@ -34,7 +34,7 @@ import {
 } from "react-icons/fi";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
-import UniqueFacePayFooter from "../components/footer.jsx";
+import UniqueFacePayFooter from "../components/Footer.jsx";
 if (typeof window !== "undefined") {
   gsap.registerPlugin(ScrollTrigger);
 }
@@ -52,7 +52,7 @@ const AnimatedNumber = ({ value }) => {
           new Intl.NumberFormat("en-IN", {
             minimumFractionDigits: 0,
             maximumFractionDigits: 1,
-          }).format(latest)
+          }).format(latest),
         );
       },
     });
@@ -83,7 +83,7 @@ const ModernLaptopShowcase = () => {
         tl.fromTo(
           slide,
           { y: 50, opacity: 0 },
-          { y: 0, opacity: 1, duration: 1 }
+          { y: 0, opacity: 1, duration: 1 },
         ).to(
           slide.querySelector(".progress-line"),
           {
@@ -91,7 +91,7 @@ const ModernLaptopShowcase = () => {
             duration: 1.2,
             ease: "power2.inOut",
           },
-          "-=0.5"
+          "-=0.5",
         );
 
         if (i !== slides.length - 1) {
@@ -882,7 +882,7 @@ const CleanHighlightReveal = () => {
               const opacity = useTransform(
                 smoothProgress,
                 [start, start + 0.05, end - 0.05, end],
-                [0, 1, 1, 0]
+                [0, 1, 1, 0],
               );
               const y = useTransform(smoothProgress, [start, end], [100, -100]);
 
@@ -907,12 +907,12 @@ const CleanHighlightReveal = () => {
               const opacity = useTransform(
                 smoothProgress,
                 [start, start + 0.05, end - 0.05, end],
-                [0, 1, 1, 0]
+                [0, 1, 1, 0],
               );
               const x = useTransform(
                 smoothProgress,
                 [start, start + 0.08],
-                [50, 0]
+                [50, 0],
               );
 
               return (
@@ -1235,7 +1235,7 @@ const Home = () => {
                           ₹{450 * (i + 1)}. 00
                         </p>
                       </div>
-                    )
+                    ),
                   )}
                 </div>
               </div>

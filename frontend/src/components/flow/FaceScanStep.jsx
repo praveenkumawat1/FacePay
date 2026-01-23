@@ -124,7 +124,7 @@ const FaceScanStep = ({ next, back }) => {
       }
     } catch (err) {
       throw new Error(
-        "Camera access denied.  Please allow camera permissions."
+        "Camera access denied.  Please allow camera permissions.",
       );
     }
   };
@@ -139,7 +139,7 @@ const FaceScanStep = ({ next, back }) => {
           new faceapiLib.TinyFaceDetectorOptions({
             inputSize: 224,
             scoreThreshold: 0.5,
-          })
+          }),
         );
 
         const detected = detections.length === 1;
@@ -155,7 +155,7 @@ const FaceScanStep = ({ next, back }) => {
           faceapiLib.matchDimensions(canvas, displaySize);
           const resizedDetections = faceapiLib.resizeResults(
             detections,
-            displaySize
+            displaySize,
           );
 
           const ctx = canvas.getContext("2d");
@@ -167,7 +167,7 @@ const FaceScanStep = ({ next, back }) => {
               ctx,
               detection.detection.box,
               canvas.width,
-              canvas.height
+              canvas.height,
             );
           }
         }
@@ -426,7 +426,7 @@ const FaceScanStep = ({ next, back }) => {
             }
           },
           "image/jpeg",
-          0.95
+          0.95,
         );
       } catch (error) {
         console.error("Error capturing face image:", error);
@@ -505,17 +505,17 @@ const FaceScanStep = ({ next, back }) => {
                   scanComplete
                     ? "bg-green-500/90 text-white border-green-400 shadow-[0_0_20px_rgba(16,185,129,0.5)]"
                     : faceDetected
-                    ? "bg-blue-500/90 text-white border-blue-400 shadow-[0_0_20px_rgba(59,130,246,0.5)]"
-                    : "bg-gray-800/80 text-gray-300 border-gray-600"
+                      ? "bg-blue-500/90 text-white border-blue-400 shadow-[0_0_20px_rgba(59,130,246,0.5)]"
+                      : "bg-gray-800/80 text-gray-300 border-gray-600"
                 }`}
               >
                 {scanComplete
                   ? "✓ VERIFICATION COMPLETE"
                   : faceDetected
-                  ? isScanning
-                    ? "⟳ SCANNING BIOMETRICS..."
-                    : "◉ FACE DETECTED"
-                  : "⊗ NO FACE DETECTED"}
+                    ? isScanning
+                      ? "⟳ SCANNING BIOMETRICS..."
+                      : "◉ FACE DETECTED"
+                    : "⊗ NO FACE DETECTED"}
               </div>
             </div>
           )}
@@ -609,8 +609,8 @@ const FaceScanStep = ({ next, back }) => {
           {isLoading
             ? "Loading..."
             : scanComplete
-            ? "Continue →"
-            : `Scanning...  ${scanProgress.toFixed(0)}%`}
+              ? "Continue →"
+              : `Scanning...  ${scanProgress.toFixed(0)}%`}
         </button>
       </div>
 

@@ -123,8 +123,8 @@ const PasswordStep = ({ next, back }) => {
                          passwordsMatch && confirm
                            ? "border-green-500"
                            : confirm && !passwordsMatch
-                           ? "border-red-500"
-                           : "border-gray-300"
+                             ? "border-red-500"
+                             : "border-gray-300"
                        }`}
           />
           <button
@@ -150,7 +150,7 @@ const PasswordStep = ({ next, back }) => {
             <span
               className={`text-sm font-bold ${strength.color.replace(
                 "bg-",
-                "text-"
+                "text-",
               )}`}
             >
               {strength.label}
