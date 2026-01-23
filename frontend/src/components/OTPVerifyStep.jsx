@@ -6,7 +6,7 @@ const LOCKOUT_SEC = 60;
 const OTP_EXPIRE_SEC = 90;
 
 export default function OTPVerifyStep({
-  email,
+  email = "",
   next,
   back,
   onEditContact = () => {},
@@ -23,11 +23,17 @@ export default function OTPVerifyStep({
   const [status, setStatus] = useState("init");
   const [error, setError] = useState(null);
   const [showHelp, setShowHelp] = useState(false);
+  const [resendLoading, setResendLoading] = useState(false);
 
-  // Timer effects
+  const sentOnceRef = useRef(false);
+
+  const canonicalEmail = (email || "").trim().toLowerCase();
+
+  // Timer effect
   useEffect(() => {
     let otpInterval = null,
       lockoutInterval = null;
+
     if (timer > 0 && !isExpired) {
       otpInterval = setInterval(() => {
         setTimer((t) => {
@@ -40,6 +46,7 @@ export default function OTPVerifyStep({
         });
       }, 1000);
     }
+
     if (lockTimer > 0) {
       lockoutInterval = setInterval(() => {
         setLockTimer((l) => {
@@ -53,38 +60,79 @@ export default function OTPVerifyStep({
         });
       }, 1000);
     }
+
     return () => {
       clearInterval(otpInterval);
       clearInterval(lockoutInterval);
     };
   }, [timer, lockTimer, isExpired]);
 
-  // Automatically send OTP (on first mount or resend)
+  // Auto send OTP once per email
   useEffect(() => {
-    handleSendOtp();
-    // eslint-disable-next-line
-  }, []);
+    if (canonicalEmail && !sentOnceRef.current) {
+      handleSendOtp();
+      sentOnceRef.current = true;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canonicalEmail]);
 
-  const handleSendOtp = () => {
+  const handleSendOtp = async () => {
     setLoading(true);
     setError(null);
-    setTimeout(() => {
+
+    try {
+      const res = await fetch("/api/login-otp/send-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: canonicalEmail }),
+      });
+
+      const data = await res.json();
+
+      if (!data.success) {
+        setError(
+          data.error ||
+            "Failed to send OTP. Please check your email, backend and try again.",
+        );
+        setLoading(false);
+        return;
+      }
+
       setStatus("sent");
       setTimer(OTP_EXPIRE_SEC);
       setIsExpired(false);
       setEmailOtp("");
       setTries(0);
       setIsLocked(false);
+    } catch (err) {
+      setError("Failed to send OTP. (Network error or backend not running)");
+    } finally {
       setLoading(false);
-      // For demo, OTP = 123456
-    }, 700);
+    }
   };
 
-  const handleVerify = () => {
+  const handleResend = async () => {
+    if (resendLoading) return;
+    setResendLoading(true);
+    setError(null);
+
+    try {
+      sentOnceRef.current = false;
+      setStatus("init");
+      setTimer(0);
+      setIsExpired(false);
+      await handleSendOtp();
+    } finally {
+      setTimeout(() => setResendLoading(false), 800);
+    }
+  };
+
+  const handleVerify = async () => {
     if (isExpired) {
       setError("OTP expired. Please resend and try again.");
       return;
     }
+
     if (tries >= MAX_TRIES && !isLocked) {
       setIsLocked(true);
       setLockTimer(LOCKOUT_SEC);
@@ -93,19 +141,41 @@ export default function OTPVerifyStep({
       );
       return;
     }
+
     setLoading(true);
     setError(null);
 
-    setTimeout(() => {
-      if (emailOtp === "123456") {
+    try {
+      const res = await fetch("/api/login-otp/verify-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: canonicalEmail,
+          emailOtp,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        // JWT token ko localStorage me save karo
+        if (data.token) {
+          localStorage.setItem("token", data.token);
+          // agar tum har jagah "facepay_token" use karna chaho to:
+          // localStorage.setItem("facepay_token", data.token);
+        }
+
         setStatus("verified");
         if (typeof next === "function") next({ otpVerified: true });
       } else {
         setTries((t) => t + 1);
-        setError("Invalid OTP. Try again. (Hint: 123456)");
+        setError(data.error || "Invalid OTP. Try again.");
       }
+    } catch (err) {
+      setError("Unable to verify OTP. Check your connection.");
+    } finally {
       setLoading(false);
-    }, 700);
+    }
   };
 
   const validEmailOtp = /^\d{6}$/.test(emailOtp);
@@ -115,7 +185,7 @@ export default function OTPVerifyStep({
       <div className="text-center mb-2">
         <h2 className="text-2xl font-bold text-gray-900">Verify Your Email</h2>
         <p className="text-sm text-gray-600 mt-1">
-          Enter the OTP sent to your email ({email})
+          Enter the OTP sent to your email (<b>{canonicalEmail || "--"}</b>)
         </p>
         <div className="text-xs mt-2 flex flex-col items-center gap-1">
           <div>
@@ -149,14 +219,14 @@ export default function OTPVerifyStep({
         </label>
         <input
           type="text"
-          value={email}
+          value={canonicalEmail}
           readOnly
           disabled
           className="w-full px-4 py-3 rounded-xl border border-gray-300 bg-gray-100 text-gray-600"
         />
       </div>
 
-      {/* Email OTP */}
+      {/* Email OTP input */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
           Email OTP
@@ -190,12 +260,12 @@ export default function OTPVerifyStep({
       <div className="flex justify-between mt-2 mb-2 gap-2">
         <button
           className={`px-4 py-2 rounded-lg font-semibold transition-all duration-300 ${
-            loading || timer > 0
+            loading || timer > 0 || status === "sent"
               ? "bg-gray-200 text-gray-500 cursor-not-allowed"
               : "bg-black text-white hover:bg-gray-900 shadow"
           }`}
           onClick={handleSendOtp}
-          disabled={loading || timer > 0 || isLocked}
+          disabled={loading || timer > 0 || isLocked || status === "sent"}
         >
           {loading
             ? "Sending OTP..."
@@ -218,6 +288,7 @@ export default function OTPVerifyStep({
           Didn't receive OTP?
         </button>
       </div>
+
       <button
         className={`w-full py-3.5 rounded-xl font-semibold text-lg mt-2 transition-all duration-300 ${
           validEmailOtp && !loading && !isLocked && !isExpired
@@ -236,7 +307,6 @@ export default function OTPVerifyStep({
         {loading ? "Verifying..." : "Verify & Continue"}
       </button>
 
-      {/* Help Modal (optional) */}
       {showHelp && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-30">
           <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full relative">
@@ -265,6 +335,17 @@ export default function OTPVerifyStep({
             >
               Contact Support
             </button>
+            <div className="mt-3 text-sm text-gray-700">
+              <button
+                disabled={resendLoading}
+                className={`underline font-medium text-[#388E3C] hover:text-[#225322] ${
+                  resendLoading ? "opacity-60 cursor-wait" : ""
+                }`}
+                onClick={handleResend}
+              >
+                {resendLoading ? "Sending..." : "Resend OTP"}
+              </button>
+            </div>
           </div>
         </div>
       )}

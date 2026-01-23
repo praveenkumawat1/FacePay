@@ -2,6 +2,15 @@ const mongoose = require("mongoose");
 const { encrypt, decrypt } = require("../utils/crypto");
 const bcrypt = require("bcryptjs");
 
+/**
+ * User Schema for FacePay
+ * - Encrypts: email, mobile, account_number (at rest)
+ * - Hashes: password_hash (bcrypt)
+ * - Validation for all fields
+ * - Static helpers for searching via unencrypted values
+ * - .toDecrypted() instance method for filtered, decoded API return
+ */
+
 const userSchema = new mongoose.Schema(
   {
     // Personal Info
@@ -10,6 +19,7 @@ const userSchema = new mongoose.Schema(
       required: [true, "Name is required"],
       trim: true,
       minlength: [2, "Name must be at least 2 characters"],
+      maxlength: [50, "Name cannot exceed 50 characters"],
     },
     email: {
       type: String,
@@ -37,7 +47,7 @@ const userSchema = new mongoose.Schema(
     // Security
     password_hash: {
       type: String,
-      required: true,
+      required: true, // Will be set to bcrypt hash
     },
 
     // Bank Details
@@ -45,17 +55,20 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: [true, "Bank name is required"],
       trim: true,
+      maxlength: [50, "Bank name too long"],
     },
     account_holder_name: {
       type: String,
       required: [true, "Account holder name is required"],
       trim: true,
+      maxlength: [50, "Account holder name too long"],
     },
     account_number: {
       type: String,
       required: [true, "Account number is required"],
       unique: true,
       trim: true,
+      maxlength: [32, "Account number too long"],
     },
     ifsc: {
       type: String,
@@ -70,6 +83,7 @@ const userSchema = new mongoose.Schema(
       type: Number,
       default: 1000.0,
       min: [0, "Balance cannot be negative"],
+      max: [10000000, "Balance limit exceeded"],
     },
 
     // Status
@@ -82,15 +96,9 @@ const userSchema = new mongoose.Schema(
       default: true,
     },
 
-    // === 2FA / TOTP (Google Authenticator) ===
-    totp_secret: {
-      type: String,
-      default: null,
-    },
-    totp_temp: {
-      type: String,
-      default: null,
-    },
+    // 2FA / TOTP
+    totp_secret: String, // Permanent for 2FA
+    totp_temp: String, // Temporary setup secret
     is_2fa_enabled: {
       type: Boolean,
       default: false,
@@ -101,12 +109,14 @@ const userSchema = new mongoose.Schema(
   },
 );
 
-userSchema.index({ email: 1 });
-userSchema.index({ mobile: 1 });
-userSchema.index({ account_number: 1 });
+// Ensure uniqueness
+userSchema.index({ email: 1 }, { unique: true });
+userSchema.index({ mobile: 1 }, { unique: true });
+userSchema.index({ account_number: 1 }, { unique: true });
 
-// === Encrypt on save ONLY if value not already encrypted (guard for ":") ===
+// ========== Pre-save hook for encryption + password hashing ==========
 userSchema.pre("save", async function (next) {
+  // Encrypt fields if updated and not already encrypted
   if (this.isModified("email") && this.email && !this.email.includes(":")) {
     this.email = encrypt(this.email);
   }
@@ -120,6 +130,7 @@ userSchema.pre("save", async function (next) {
   ) {
     this.account_number = encrypt(this.account_number);
   }
+  // Hash password if plain (not already bcrypt hashed)
   if (
     this.isModified("password_hash") &&
     !this.password_hash.startsWith("$2")
@@ -129,27 +140,24 @@ userSchema.pre("save", async function (next) {
   next();
 });
 
-// === Decrypt method for APIs ===
+// ========== Instance method: Decrypt for API returns ==========
 userSchema.methods.toDecrypted = function () {
-  const cloned = { ...this._doc };
+  const out = { ...this._doc };
   try {
-    cloned.email = cloned.email ? decrypt(cloned.email) : "";
-    cloned.mobile = cloned.mobile ? decrypt(cloned.mobile) : "";
-    cloned.account_number = cloned.account_number
-      ? decrypt(cloned.account_number)
-      : "";
-  } catch (e) {
-    cloned.email = "";
-    cloned.mobile = "";
-    cloned.account_number = "";
+    out.email = out.email ? decrypt(out.email) : "";
+    out.mobile = out.mobile ? decrypt(out.mobile) : "";
+    out.account_number = out.account_number ? decrypt(out.account_number) : "";
+  } catch (err) {
+    out.email = "";
+    out.mobile = "";
+    out.account_number = "";
   }
-  delete cloned.password_hash;
-  return cloned;
+  delete out.password_hash;
+  return out;
 };
 
-// === Static query helpers for encrypted fields ===
-userSchema.statics.findByUnencrypted = async function (query) {
-  // Accepts query with possible email/mobile/account_number in plain
+// ========== Statics: Search by unencrypted value ==========
+userSchema.statics.findByUnencrypted = function (query) {
   const encQuery = { ...query };
   if (encQuery.email) encQuery.email = encrypt(encQuery.email);
   if (encQuery.mobile) encQuery.mobile = encrypt(encQuery.mobile);
@@ -158,8 +166,7 @@ userSchema.statics.findByUnencrypted = async function (query) {
   return this.findOne(encQuery);
 };
 
-userSchema.statics.findAllByUnencrypted = async function (query) {
-  // Array results for admin tools etc
+userSchema.statics.findAllByUnencrypted = function (query) {
   const encQuery = { ...query };
   if (encQuery.email) encQuery.email = encrypt(encQuery.email);
   if (encQuery.mobile) encQuery.mobile = encrypt(encQuery.mobile);

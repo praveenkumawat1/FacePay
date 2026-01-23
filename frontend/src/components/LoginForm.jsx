@@ -1,15 +1,15 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import OTPVerifyStep from "./OTPVerifyStep";
 import { useNavigate } from "react-router-dom";
+
+const CAPTCHA_LEN = 6;
 
 const LoginForm = ({ onClose, switchToSignup, onForgotPassword }) => {
   const navigate = useNavigate();
 
-  // Steps: 1 = login, 2 = OTP
   const [step, setStep] = useState(1);
   const [userForOtp, setUserForOtp] = useState(null);
 
-  // Login form states
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -22,11 +22,11 @@ const LoginForm = ({ onClose, switchToSignup, onForgotPassword }) => {
 
   const canvasRef = useRef(null);
 
-  // CAPTCHA logic
+  // STRONG CAPTCHA GENERATOR
   function generateChallenge() {
-    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
     let text = "";
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < CAPTCHA_LEN; i++) {
       text += chars.charAt(Math.floor(Math.random() * chars.length));
     }
     setChallengeText(text);
@@ -38,95 +38,131 @@ const LoginForm = ({ onClose, switchToSignup, onForgotPassword }) => {
   useEffect(() => {
     generateChallenge();
   }, []);
+
+  // Strong CAPTCHA Drawing
   useEffect(() => {
     if (!canvasRef.current || !challengeText) return;
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
-    const width = 300;
+    const width = 340;
     const height = 56;
 
     ctx.clearRect(0, 0, width, height);
-    ctx.fillStyle = "#f8fafc";
+    ctx.fillStyle = "#fff";
     ctx.fillRect(0, 0, width, height);
 
-    for (let i = 0; i < 35; i++) {
-      ctx.fillStyle = "rgba(0,0,0,0.05)";
-      ctx.fillRect(Math.random() * width, Math.random() * height, 2, 2);
+    for (let i = 0; i < 55; i++) {
+      ctx.fillStyle = `rgba(${Math.floor(
+        Math.random() * 220,
+      )},${Math.floor(Math.random() * 220)},${Math.floor(
+        Math.random() * 220,
+      )},${(Math.random() * 0.29 + 0.08).toFixed(2)})`;
+      ctx.beginPath();
+      ctx.arc(
+        Math.random() * width,
+        Math.random() * height,
+        Math.random() * 2 + 1.1,
+        0,
+        2 * Math.PI,
+      );
+      ctx.fill();
     }
 
-    ctx.font = "bold 28px monospace";
-    ctx.fillStyle = "#1e293b";
-    ctx.textBaseline = "middle";
-    const letterSpacing = width / (challengeText.length + 1);
-    challengeText.split("").forEach((char, i) => {
-      const x = letterSpacing * (i + 1);
-      const y = height / 2 + Math.sin(i) * 4;
+    for (let i = 0; i < 3; i++) {
       ctx.save();
-      ctx.translate(x, y);
-      ctx.rotate((Math.random() - 0.5) * 0.25);
+      ctx.strokeStyle = `rgba(${130 + Math.random() * 80},${
+        130 + Math.random() * 80
+      },${130 + Math.random() * 80},0.29)`;
+      ctx.lineWidth = Math.random() * 1.8 + 1;
+      ctx.beginPath();
+      const phase = Math.random() * Math.PI * 2;
+      for (let x = 0; x < width; x++) {
+        ctx.lineTo(
+          x,
+          height / 2 +
+            Math.sin((x / width) * Math.PI * 2 * 2 + phase) * 8 +
+            Math.random() * 1.6,
+        );
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    const spacing = width / (challengeText.length + 1.3);
+    challengeText.split("").forEach((char, i) => {
+      let fontSize = 24 + Math.floor(Math.random() * 10);
+      ctx.save();
+      ctx.font = `bold ${fontSize}px 'Courier New', monospace`;
+      ctx.textBaseline = "middle";
+      ctx.translate(
+        spacing * (i + 0.85) + Math.random() * 5 - 2.5,
+        height / 2 + Math.sin(i * 2 + 2.4) * 7 + Math.random() * 2.5 - 1.25,
+      );
+      ctx.rotate((Math.random() - 0.5) * 0.32);
+      ctx.fillStyle = i % 2 === 0 ? "#0f172a" : "#3753ad";
+      ctx.shadowColor = "#888";
+      ctx.shadowBlur = 1 + Math.random() * 1;
       ctx.fillText(char, 0, 0);
       ctx.restore();
     });
-
-    ctx.strokeStyle = "rgba(0,0,0,0.08)";
-    ctx.lineWidth = 1.5;
-    for (let i = 0; i < 2; i++) {
-      ctx.beginPath();
-      ctx.moveTo(0, height * Math.random());
-      ctx.lineTo(width, height * Math.random());
-      ctx.stroke();
-    }
   }, [challengeText]);
+
   useEffect(() => {
     if (inputText.length === challengeText.length && inputText) {
-      if (inputText.toUpperCase() === challengeText) {
-        setIsVerified(true);
-        setCaptchaError(false);
-      } else {
-        setCaptchaError(true);
-      }
+      setIsVerified(inputText.toLowerCase() === challengeText.toLowerCase());
+      setCaptchaError(inputText.toLowerCase() !== challengeText.toLowerCase());
     } else if (inputText.length > 0) {
       setCaptchaError(false);
     }
   }, [inputText, challengeText]);
 
-  // Step 1 submit
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
     setLoginError(null);
 
-    if (!email || !password) {
-      setLoginError("Please enter email and password");
+    if (!email.trim() || !password) {
+      setLoginError("Email and password required");
       return;
     }
     if (!isVerified) {
-      setLoginError("Please complete the CAPTCHA verification");
+      setLoginError("Please complete CAPTCHA");
       return;
     }
     setLoading(true);
 
-    // Demo "login": OTP step
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
+      });
+      const data = await res.json();
+
+      if (!data.success) {
+        setLoginError(data.error || "Invalid credentials");
+        setLoading(false);
+        return;
+      }
+
+      // FIX: Always send prop from state, not backend
       setUserForOtp({
-        email,
-        full_name: email.split("@")[0] || "User",
-        token: "test-token-abcde",
+        email: email.trim().toLowerCase(),
+        full_name: data.user?.full_name || "",
       });
       setStep(2);
-    }, 900);
+    } catch {
+      setLoginError("Connection error. Try again.");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // OTP Step
   if (step === 2 && userForOtp) {
     return (
       <OTPVerifyStep
         email={userForOtp.email}
         back={() => setStep(1)}
         next={() => {
-          // Localstorage set (demo), then dashboard
-          localStorage.setItem("facepay_token", userForOtp.token);
-          localStorage.setItem("facepay_user", JSON.stringify(userForOtp));
           if (onClose) onClose();
           navigate("/dashboard");
         }}
@@ -135,57 +171,61 @@ const LoginForm = ({ onClose, switchToSignup, onForgotPassword }) => {
     );
   }
 
-  // Login Step
   return (
-    <>
+    <div className="w-full max-w-lg mx-auto">
       {loading && (
-        <div className="absolute inset-0 bg-white/90 backdrop-blur-sm flex items-center justify-center z-50 rounded-2xl">
+        <div className="absolute inset-0 bg-white/85 backdrop-blur-sm flex items-center justify-center z-50 rounded-2xl">
           <div className="text-center">
-            <div className="w-16 h-16 border-4 border-black border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-            <p className="text-lg font-semibold text-gray-900">Logging in...</p>
+            <div className="w-10 h-10 border-4 border-slate-800 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+            <p className="text-slate-800 text-sm font-medium">Verifying...</p>
           </div>
         </div>
       )}
 
-      <div className="px-8 py-7">
+      <div className="px-6 sm:px-8 py-4">
         <div className="text-center mb-4">
-          <h2 className="text-2xl font-bold text-gray-900">Welcome back</h2>
-          <p className="text-sm text-gray-600 mt-1">
-            Login to <span className="font-semibold text-black">FacePay</span>
+          <h2 className="text-xl font-bold text-slate-900 tracking-tight">
+            Welcome back
+          </h2>
+          <p className="text-sm text-slate-600 mt-0.5">
+            Sign in to{" "}
+            <span className="font-semibold text-slate-900">FacePay</span>
           </p>
         </div>
 
         {loginError && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl">
-            <p className="text-red-700 text-sm font-medium">❌ {loginError}</p>
+          <div className="mb-3.5 p-2.5 bg-red-50/70 border border-red-200 rounded-xl text-center">
+            <p className="text-red-700 text-sm font-medium">{loginError}</p>
           </div>
         )}
 
-        <form onSubmit={handleLogin}>
-          <div className="mb-3.5">
-            <label className="text-sm font-medium text-gray-700 block mb-1">
-              Email or Username
+        <form onSubmit={handleLogin} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Email
             </label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50/70 
-                         focus:outline-none focus:ring-4 focus:ring-black/10 focus:border-black transition"
+              placeholder="name@company.com"
+              className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white 
+                         focus:outline-none focus:ring-2 focus:ring-slate-900/20 focus:border-slate-400 
+                         transition shadow-sm text-sm"
               required
+              autoComplete="email"
             />
           </div>
 
-          <div className="mb-3.5">
-            <div className="flex justify-between items-end mb-1">
-              <label className="text-sm font-medium text-gray-700">
+          <div>
+            <div className="flex justify-between items-baseline mb-1">
+              <label className="text-sm font-medium text-slate-700">
                 Password
               </label>
               <button
                 type="button"
                 onClick={onForgotPassword}
-                className="text-sm font-medium text-black hover:underline transition"
+                className="text-sm text-slate-700 hover:text-slate-900 font-medium transition"
               >
                 Forgot?
               </button>
@@ -195,69 +235,73 @@ const LoginForm = ({ onClose, switchToSignup, onForgotPassword }) => {
                 type={showPassword ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter password"
-                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50/70 
-                           focus:outline-none focus:ring-4 focus:ring-black/10 focus:border-black transition pr-14"
+                placeholder="••••••••"
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white 
+                           focus:outline-none focus:ring-2 focus:ring-slate-900/20 focus:border-slate-400 
+                           transition shadow-sm pr-14 text-sm"
                 required
+                autoComplete="current-password"
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-medium text-gray-600 hover:text-black transition"
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-800 text-xs font-medium transition"
               >
                 {showPassword ? "Hide" : "Show"}
               </button>
             </div>
           </div>
 
-          <div className="mb-4">
-            <div className="flex items-center justify-between mb-1.5">
-              <p className="text-sm font-medium text-gray-700">
-                Verify you're human
-              </p>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium text-slate-700">
+                Verification
+              </label>
               <button
                 type="button"
                 onClick={generateChallenge}
-                className="text-xs text-gray-500 hover:text-black underline transition"
+                className="text-xs text-slate-500 hover:text-slate-800 underline transition"
               >
                 Refresh
               </button>
             </div>
 
-            <div className="p-2.5 bg-gray-50/70 rounded-xl border border-gray-200 shadow-inner">
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-2 shadow-inner">
               <canvas
                 ref={canvasRef}
-                width={300}
+                width={340}
                 height={56}
-                className="mx-auto rounded-lg"
+                className="w-full rounded-lg mx-auto"
               />
             </div>
 
-            <div className="relative mt-2">
+            <div className="relative">
               <input
                 type="text"
                 value={inputText}
-                onChange={(e) => setInputText(e.target.value.toUpperCase())}
-                placeholder="Type the text"
-                className={`w-full px-4 py-2.5 rounded-xl border bg-gray-50/70 
-                           focus:outline-none focus:ring-4 focus:ring-black/10 transition
-                           ${
-                             isVerified
-                               ? "border-green-500"
-                               : captchaError
-                                 ? "border-red-500"
-                                 : "border-gray-200"
-                           }`}
+                onChange={(e) => setInputText(e.target.value)}
+                placeholder="Enter characters"
+                maxLength={CAPTCHA_LEN}
+                className={`w-full px-4 py-2.5 rounded-xl border bg-white shadow-sm transition text-sm
+                           focus:outline-none focus:ring-2 focus:ring-slate-900/20
+                            ${
+                              isVerified
+                                ? "border-emerald-500 focus:border-emerald-500 focus:ring-emerald-500/20"
+                                : captchaError
+                                  ? "border-red-500 focus:border-red-500 focus:ring-red-500/20"
+                                  : "border-slate-200 focus:border-slate-400"
+                            }`}
               />
               {isVerified && (
-                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-green-600 text-lg font-bold">
+                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-emerald-600 text-lg font-bold pointer-events-none">
                   ✓
                 </span>
               )}
             </div>
+
             {captchaError && (
-              <p className="text-xs text-red-600 mt-1 text-center">
-                Incorrect CAPTCHA
+              <p className="text-xs text-red-600 text-center font-medium pt-0.5">
+                Incorrect — try again
               </p>
             )}
           </div>
@@ -265,48 +309,46 @@ const LoginForm = ({ onClose, switchToSignup, onForgotPassword }) => {
           <button
             type="submit"
             disabled={!isVerified || loading}
-            className={`w-full py-3 rounded-xl font-semibold text-lg transition-all duration-300
+            className={`w-full py-2.5 rounded-xl font-semibold text-base transition-all duration-200 mt-1
               ${
                 isVerified && !loading
-                  ? "bg-black text-white hover:bg-gray-900 shadow-lg hover:shadow-xl hover:-translate-y-0.5"
-                  : "bg-gray-200 text-gray-500 cursor-not-allowed"
+                  ? "bg-slate-900 text-white hover:bg-slate-800 shadow hover:shadow-md active:scale-[0.98]"
+                  : "bg-slate-200 text-slate-400 cursor-not-allowed"
               }`}
           >
-            {loading ? "Logging in..." : "Login"}
+            {loading ? "Signing in..." : "Sign in"}
           </button>
         </form>
 
         <div className="relative my-4">
           <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-gray-300"></div>
+            <div className="w-full border-t border-slate-200"></div>
           </div>
           <div className="relative flex justify-center text-sm">
-            <span className="px-3 bg-white/95 text-gray-500 font-medium">
-              OR
-            </span>
+            <span className="px-4 bg-white text-slate-500 font-medium">OR</span>
           </div>
         </div>
 
         <button
           type="button"
           onClick={() => alert("Face login coming soon!  🚀")}
-          className="w-full py-3 rounded-xl border-2 border-black bg-transparent font-semibold text-black 
-                     hover:bg-black hover:text-white transition-all duration-300 shadow-md hover:shadow-lg"
+          className="w-full py-2.5 rounded-xl border-2 border-slate-800 font-semibold text-slate-800
+                     hover:bg-slate-900 hover:text-white transition-all duration-200 shadow-sm hover:shadow active:scale-[0.98]"
         >
           Login with Face
         </button>
 
-        <p className="text-center text-sm text-gray-600 mt-4">
-          New here?{" "}
+        <p className="text-center text-sm text-slate-600 mt-3.5">
+          Don't have an account?{" "}
           <button
             onClick={switchToSignup}
-            className="font-semibold text-black hover:underline transition"
+            className="font-semibold text-slate-900 hover:underline transition"
           >
-            Create account
+            Sign up
           </button>
         </p>
       </div>
-    </>
+    </div>
   );
 };
 

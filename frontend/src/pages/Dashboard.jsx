@@ -84,7 +84,8 @@ const Dashboard = () => {
   useEffect(() => {
     const loadProfile = async () => {
       try {
-        const token = localStorage.getItem("facepay_token");
+        // FIX: same key jo login/OTP me use ho rahi hai
+        const token = localStorage.getItem("token");
         if (!token) {
           window.location.href = "/";
           return;
@@ -276,8 +277,6 @@ const Dashboard = () => {
               <InfoRow label="IFSC" value={user?.ifsc} />
             </motion.div>
           </div>
-
-          {/* ---- 2FA SECTION REMOVED ---- */}
         </div>
       </main>
     </div>

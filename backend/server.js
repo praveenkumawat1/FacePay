@@ -1,5 +1,3 @@
-// server.js
-
 const express = require("express");
 const cors = require("cors");
 const fs = require("fs");
@@ -37,12 +35,14 @@ app.use((req, res, next) => {
 // IMPORT ROUTES — check all paths carefully!
 const authRoutes = require("./routes/authRoutes");
 const paymentRoutes = require("./routes/paymentRoutes");
-const otpRoutes = require("./routes/otp"); // <-- Make sure routes/otp.js exists and has module.exports = router;
+const otpRoutes = require("./routes/otp"); // <-- FOR SIGNUP/OTHER OTPS
+const loginOtpRoutes = require("./routes/loginOtp"); // <-- ADD THIS LINE FOR LOGIN OTP
 
 // REGISTER ROUTES — THESE ARE CASE SENSITIVE!
 app.use("/api/auth", authRoutes);
 app.use("/api/payment", paymentRoutes);
-app.use("/api/otp", otpRoutes);
+app.use("/api/otp", otpRoutes); // Default (signup etc OTP)
+app.use("/api/login-otp", loginOtpRoutes); // <<--- ADD THIS LINE
 
 // Simple home route
 app.get("/", (req, res) => {
@@ -61,6 +61,16 @@ app.get("/", (req, res) => {
         makePayment: "POST /api/payment/pay (Protected)",
         getTransactions: "GET /api/payment/transactions (Protected)",
         getBalance: "GET /api/payment/balance (Protected)",
+      },
+      otp: {
+        signup: {
+          send: "POST /api/otp/send-otp",
+          verify: "POST /api/otp/verify-otp",
+        },
+        login: {
+          send: "POST /api/login-otp/send-otp",
+          verify: "POST /api/login-otp/verify-otp",
+        },
       },
     },
     documentation: {
@@ -169,6 +179,16 @@ app.get("/api", (req, res) => {
           protected: true,
         },
       },
+      otp: {
+        signup: {
+          send: "POST /api/otp/send-otp",
+          verify: "POST /api/otp/verify-otp",
+        },
+        login: {
+          send: "POST /api/login-otp/send-otp",
+          verify: "POST /api/login-otp/verify-otp",
+        },
+      },
     },
   });
 });
@@ -190,6 +210,8 @@ app.use((req, res) => {
       "GET /api/payment/balance",
       "POST /api/otp/send-otp",
       "POST /api/otp/verify-otp",
+      "POST /api/login-otp/send-otp",
+      "POST /api/login-otp/verify-otp",
     ],
   });
 });

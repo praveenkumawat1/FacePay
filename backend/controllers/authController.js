@@ -5,15 +5,11 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const fs = require("fs");
 const { v4: uuidv4 } = require("uuid");
+const { encrypt, decrypt } = require("../utils/crypto");
 
-// Encryption helpers (only for manual decrypt for API return)
-const { decrypt } = require("../utils/crypto");
-
-// === TOTP dependencies ===
 const { authenticator } = require("otplib");
 const qrcode = require("qrcode");
 
-// Temporary face descriptor extraction
 const extractFaceDescriptor = async (imagePath) => {
   return {
     descriptor: Array(128)
@@ -23,10 +19,9 @@ const extractFaceDescriptor = async (imagePath) => {
   };
 };
 
-// Register User (NO encryption in controller, model hook handles it!)
 exports.registerUser = async (req, res) => {
   try {
-    const {
+    let {
       full_name,
       email,
       mobile,
@@ -37,10 +32,13 @@ exports.registerUser = async (req, res) => {
       account_number,
       ifsc,
     } = req.body;
-
     const faceImage = req.file;
 
-    // Validation
+    // Normalize
+    email = (email || "").trim().toLowerCase();
+    mobile = (mobile || "").trim();
+    account_number = (account_number || "").trim();
+
     if (
       !full_name ||
       !email ||
@@ -65,9 +63,13 @@ exports.registerUser = async (req, res) => {
       });
     }
 
-    // Check existing user (use schema static so query is encrypted based on plain)
+    // ENCRYPTED duplicate check
     const existingUser = await User.findOne({
-      $or: [{ email }, { mobile }, { account_number }],
+      $or: [
+        { email: encrypt(email) },
+        { mobile: encrypt(mobile) },
+        { account_number: encrypt(account_number) },
+      ],
     });
 
     if (existingUser) {
@@ -79,13 +81,9 @@ exports.registerUser = async (req, res) => {
       });
     }
 
-    // Extract face descriptor
     const faceData = await extractFaceDescriptor(faceImage.path);
-
-    // Hash password
     const password_hash = await bcrypt.hash(password, 10);
 
-    // Create user (plain values, will auto-encrypt in model)
     const newUser = new User({
       full_name,
       email,
@@ -100,7 +98,6 @@ exports.registerUser = async (req, res) => {
 
     await newUser.save();
 
-    // Save face data
     const newFaceData = new FaceData({
       user_id: newUser._id,
       face_descriptor: faceData.descriptor,
@@ -110,7 +107,6 @@ exports.registerUser = async (req, res) => {
 
     await newFaceData.save();
 
-    // *********** WALLET CREATE section ***********
     const wallet_key = uuidv4();
     const wallet = new Wallet({
       user_id: newUser._id,
@@ -119,14 +115,12 @@ exports.registerUser = async (req, res) => {
     });
     await wallet.save();
 
-    // Generate JWT
     const token = jwt.sign(
       { user_id: newUser._id, email: email },
       process.env.JWT_SECRET,
       { expiresIn: "7d" },
     );
 
-    // Prepare response: decrypted user fields for return
     const userDecrypted = newUser.toDecrypted();
 
     res.status(201).json({
@@ -168,10 +162,10 @@ exports.registerUser = async (req, res) => {
   }
 };
 
-// Login User (plain email, model decrypts/encrypts as needed)
 exports.loginUser = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    let { email, password } = req.body;
+    email = (email || "").trim().toLowerCase();
 
     if (!email || !password) {
       return res.status(400).json({
@@ -180,9 +174,8 @@ exports.loginUser = async (req, res) => {
       });
     }
 
-    // Find user by plain email (model hooks will encrypt in query)
-    const user = await User.findOne({ email });
-
+    // ENCRYPTED email for user search
+    const user = await User.findOne({ email: encrypt(email) });
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -206,8 +199,6 @@ exports.loginUser = async (req, res) => {
     );
 
     const wallet = await Wallet.findOne({ user_id: user._id });
-
-    // Decrypt for return
     const userDecrypted = user.toDecrypted();
 
     res.json({
@@ -249,7 +240,6 @@ exports.getProfile = async (req, res) => {
     const user = await User.findById(req.user._id || req.user.user_id).select(
       "-password_hash",
     );
-
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -257,10 +247,7 @@ exports.getProfile = async (req, res) => {
       });
     }
 
-    // Fetch wallet info for the logged-in user
     const wallet = await Wallet.findOne({ user_id: user._id });
-
-    // Decrypt to return
     const userDecrypted = user.toDecrypted();
 
     res.json({
@@ -286,7 +273,6 @@ exports.getProfile = async (req, res) => {
   }
 };
 
-// ==== TOTP / 2FA GOOGLE AUTH SECTION ====
 exports.getTotpSetup = async (req, res) => {
   try {
     const user = req.user;
@@ -350,8 +336,10 @@ exports.verifyTotp = async (req, res) => {
 exports.loginWithTotp = async (req, res) => {
   const { email, code } = req.body;
   try {
-    // Find user by plain email
-    const user = await User.findOne({ email });
+    // Normalize email
+    let normEmail = (email || "").trim().toLowerCase();
+    // Find user by ENCRYPTED email
+    const user = await User.findOne({ email: encrypt(normEmail) });
     if (!user || !user.totp_secret) {
       return res
         .status(400)
@@ -364,14 +352,12 @@ exports.loginWithTotp = async (req, res) => {
         .status(400)
         .json({ success: false, message: "Invalid 2FA code" });
 
-    // Issue a JWT token
     const token = jwt.sign(
-      { user_id: user._id, email: email },
+      { user_id: user._id, email: normEmail },
       process.env.JWT_SECRET,
       { expiresIn: "7d" },
     );
 
-    // Get wallet/info
     const wallet = await Wallet.findOne({ user_id: user._id });
     const userDecrypted = user.toDecrypted();
 
