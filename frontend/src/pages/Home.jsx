@@ -35,6 +35,7 @@ import {
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import UniqueFacePayFooter from "../components/Footer.jsx";
+
 if (typeof window !== "undefined") {
   gsap.registerPlugin(ScrollTrigger);
 }
@@ -59,6 +60,156 @@ const AnimatedNumber = ({ value }) => {
     return () => controls.stop();
   }, [value]);
   return <span>{displayValue}</span>;
+};
+
+// --- CURSOR TRAIL WITH IMAGES ---
+const CursorTrailImages = () => {
+  const containerRef = useRef(null);
+  const trailRefs = useRef([]);
+  const [trails, setTrails] = useState([]);
+  const trailIndex = useRef(0);
+
+  const images = [
+    {
+      src: "https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=400&h=300&fit=crop",
+      alt: "Face Recognition",
+    },
+    {
+      src: "https://images.unsplash.com/photo-1563013544-824ae1b704d3?w=400&h=300&fit=crop",
+      alt: "Secure Payment",
+    },
+    {
+      src: "https://images.unsplash.com/photo-1560807707-8cc77767d783?w=400&h=300&fit=crop",
+      alt: "Digital Security",
+    },
+    {
+      src: "https://images.unsplash.com/photo-1535378917042-10a22c95931a?w=400&h=300&fit=crop",
+      alt: "UPI Payment",
+    },
+    {
+      src: "https://images.unsplash.com/photo-1581092921461-eab62e97a780?w=400&h=300&fit=crop",
+      alt: "Biometric Auth",
+    },
+    {
+      src: "https://images.unsplash.com/photo-1563986768609-322da13575f3?w=400&h=300&fit=crop",
+      alt: "Face Scan",
+    },
+    {
+      src: "https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=400&h=300&fit=crop",
+      alt: "Payment Gateway",
+    },
+    {
+      src: "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=400&h=300&fit=crop",
+      alt: "Technology",
+    },
+  ];
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    let throttleTimer = null;
+
+    const handleMouseMove = (e) => {
+      if (throttleTimer) return;
+
+      throttleTimer = setTimeout(() => {
+        throttleTimer = null;
+      }, 100); // Show image every 100ms
+
+      const rect = container.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      const newTrail = {
+        id: Date.now() + Math.random(),
+        x,
+        y,
+        image: images[trailIndex.current % images.length],
+        rotation: (Math.random() - 0.5) * 30, // Random rotation
+      };
+
+      trailIndex.current += 1;
+
+      setTrails((prev) => {
+        const updated = [...prev, newTrail];
+        // Keep only last 12 images
+        return updated.slice(-12);
+      });
+    };
+
+    container.addEventListener("mousemove", handleMouseMove);
+
+    return () => {
+      container.removeEventListener("mousemove", handleMouseMove);
+      if (throttleTimer) clearTimeout(throttleTimer);
+    };
+  }, []);
+
+  // Auto fade out trails
+  useEffect(() => {
+    if (trails.length > 0) {
+      const timer = setTimeout(() => {
+        setTrails((prev) => prev.slice(1));
+      }, 2000); // Each image stays for 2 seconds
+
+      return () => clearTimeout(timer);
+    }
+  }, [trails]);
+
+  return (
+    <div
+      ref={containerRef}
+      className="absolute inset-0 overflow-hidden pointer-events-none"
+      style={{ zIndex: 1 }}
+    >
+      <AnimatePresence>
+        {trails.map((trail, index) => (
+          <motion.div
+            key={trail.id}
+            initial={{
+              opacity: 0,
+              scale: 0,
+              x: trail.x - 80,
+              y: trail.y - 60,
+              rotate: trail.rotation,
+            }}
+            animate={{
+              opacity: 1,
+              scale: 1,
+              x: trail.x - 80,
+              y: trail.y - 60,
+              rotate: trail.rotation,
+            }}
+            exit={{
+              opacity: 0,
+              scale: 0.5,
+              transition: { duration: 0.5 },
+            }}
+            transition={{
+              duration: 0.3,
+              ease: [0.23, 1, 0.32, 1],
+            }}
+            className="absolute w-40 h-28 rounded-xl overflow-hidden shadow-2xl border-2 border-white pointer-events-auto"
+            style={{
+              zIndex: index,
+            }}
+          >
+            <img
+              src={trail.image.src}
+              alt={trail.image.alt}
+              className="w-full h-full object-cover"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent flex items-end p-3">
+              <span className="text-white text-[10px] font-bold">
+                {trail.image.alt}
+              </span>
+            </div>
+          </motion.div>
+        ))}
+      </AnimatePresence>
+    </div>
+  );
 };
 
 // --- MODERN LAPTOP SHOWCASE ---
@@ -1066,17 +1217,21 @@ const Home = () => {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] selection:bg-indigo-100 font-sans">
-      {/* Hero Section */}
-      <section className="relative pt-24 pb-12 text-center px-4">
+      {/* Hero Section with Cursor Trail Images */}
+      <section className="relative pt-24 pb-12 text-center px-4 min-h-screen flex items-center justify-center overflow-hidden">
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-[800px] bg-[radial-gradient(circle_at_center,_#EEF2FF_0%,_transparent_70%)] -z-10 opacity-70" />
-        <div className="max-w-7xl mx-auto">
+
+        {/* Cursor Trail Images Effect */}
+        <CursorTrailImages />
+
+        <div className="max-w-7xl mx-auto relative z-10">
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             className="inline-flex items-center gap-2 bg-white border border-indigo-100 text-indigo-600 px-5 py-2 rounded-full text-[12px] font-bold mb-8 shadow-sm"
           >
             <span className="flex h-2 w-2 rounded-full bg-indigo-600 animate-pulse" />
-            INDIA’S FIRST FACE-BASED UPI PAYMENT SYSTEM
+            INDIA'S FIRST FACE-BASED UPI PAYMENT SYSTEM
           </motion.div>
 
           <motion.h1
@@ -1232,7 +1387,7 @@ const Home = () => {
                           </div>
                         </div>
                         <p className="font-mono text-indigo-400">
-                          ₹{450 * (i + 1)}. 00
+                          ₹{450 * (i + 1)}.00
                         </p>
                       </div>
                     ),
@@ -1336,7 +1491,7 @@ const Home = () => {
             <div className="grid grid-cols-2 gap-8">
               <div className="bg-slate-900 rounded-[2.5rem] p-10 text-white relative overflow-hidden h-[400px]">
                 <p className="text-xs font-bold opacity-50 uppercase tracking-widest">
-                  <h3>Face Verification</h3>
+                  Face Verification
                 </p>
                 <h3 className="text-6xl font-bold mt-4 tracking-tighter">
                   High Accuracy
@@ -1347,7 +1502,7 @@ const Home = () => {
                       <p>Template Matching</p>
                       <p>Fast</p>
                     </div>
-                    <div className="w-full bg-white/10 h-1. 5 rounded-full overflow-hidden">
+                    <div className="w-full bg-white/10 h-1.5 rounded-full overflow-hidden">
                       <div className="w-[90%] h-full bg-indigo-500" />
                     </div>
                   </div>

@@ -6,9 +6,11 @@ const jwt = require("jsonwebtoken");
 const fs = require("fs");
 const { v4: uuidv4 } = require("uuid");
 const { encrypt, decrypt } = require("../utils/crypto");
-
 const { authenticator } = require("otplib");
 const qrcode = require("qrcode");
+
+// NEW: Import the detailed login alert util
+const sendLoginAlertEmail = require("../utils/sendLoginAlertEmail");
 
 const extractFaceDescriptor = async (imagePath) => {
   return {
@@ -201,6 +203,25 @@ exports.loginUser = async (req, res) => {
     const wallet = await Wallet.findOne({ user_id: user._id });
     const userDecrypted = user.toDecrypted();
 
+    // Fetch device info
+    let ip =
+      req.headers["x-forwarded-for"]?.split(",").shift()?.trim() ||
+      req.socket?.remoteAddress ||
+      req.connection?.remoteAddress ||
+      req.ip ||
+      "Unknown";
+    let userAgent = req.headers["user-agent"] || "Unknown";
+    const loginTime = new Date().toLocaleString("en-IN", {
+      timeZone: "Asia/Kolkata",
+    });
+
+    // Send detailed login alert email (real user data, device, geo, IP, etc.)
+    try {
+      sendLoginAlertEmail(userDecrypted.email, { ip, userAgent, loginTime });
+    } catch (e) {
+      console.error("Login alert email send failed:", e);
+    }
+
     res.json({
       success: true,
       message: "Login successful",
@@ -336,9 +357,7 @@ exports.verifyTotp = async (req, res) => {
 exports.loginWithTotp = async (req, res) => {
   const { email, code } = req.body;
   try {
-    // Normalize email
     let normEmail = (email || "").trim().toLowerCase();
-    // Find user by ENCRYPTED email
     const user = await User.findOne({ email: encrypt(normEmail) });
     if (!user || !user.totp_secret) {
       return res

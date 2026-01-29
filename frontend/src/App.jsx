@@ -2,8 +2,8 @@ import {
   BrowserRouter,
   Routes,
   Route,
-  useLocation,
   Navigate,
+  useLocation,
 } from "react-router-dom";
 import { useState } from "react";
 import Navbar from "./components/Navbar";
@@ -11,6 +11,13 @@ import AuthModal from "./components/AuthModal";
 import GetStartedModal from "./components/GetStartedModal";
 import Home from "./pages/Home";
 import Dashboard from "./pages/Dashboard";
+import Profile from "./pages/Profile";
+import Wallet from "./pages/Wallet";
+import SendMoney from "./pages/SendMoney";
+import AddMoney from "./pages/AddMoney";
+import History from "./pages/History";
+import Security from "./pages/Security";
+import CouponsOffers from "./pages/CouponsOffers";
 import CookieConsent from "./components/CookieConsent";
 
 function AppContent() {
@@ -18,7 +25,7 @@ function AppContent() {
   const [showGetStarted, setShowGetStarted] = useState(false);
   const location = useLocation();
 
-  // Agar dashboard pe ho to navbar hide karo
+  // Only show navbar on home (not on dashboard)
   const showNavbar = !location.pathname.startsWith("/dashboard");
 
   return (
@@ -40,19 +47,28 @@ function AppContent() {
           }
         />
 
-        {/* Dashboard Page (NO Top Navbar) */}
-        <Route path="/dashboard" element={<Dashboard />} />
+        {/* Dashboard and subpages (blank for main /dashboard) */}
+        <Route path="/dashboard" element={<Dashboard />}>
+          {/* index route BLANK, so nothing shows for /dashboard */}
+          <Route index element={<></>} />
 
-        {/* Future routes */}
-        {/* <Route path="/about" element={<About />} /> */}
-        {/* <Route path="/contact" element={<Contact />} /> */}
+          {/* All working dashboard sub-pages */}
+          <Route path="profile" element={<Profile />} />
+          <Route path="wallet" element={<Wallet />} />
+          <Route path="send-money" element={<SendMoney />} />
+          <Route path="add-money" element={<AddMoney />} />
+          <Route path="history" element={<History />} />
+          <Route path="security" element={<Security />} />
+          <Route path="coupons" element={<CouponsOffers />} />
+        </Route>
+
         {/* Default fallback */}
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
 
       <CookieConsent />
 
-      {/* Modals */}
+      {/* Auth & Get Started Modals */}
       {showLogin && (
         <AuthModal
           closeModal={() => setShowLogin(false)}

@@ -35,14 +35,24 @@ app.use((req, res, next) => {
 // IMPORT ROUTES — check all paths carefully!
 const authRoutes = require("./routes/authRoutes");
 const paymentRoutes = require("./routes/paymentRoutes");
-const otpRoutes = require("./routes/otp"); // <-- FOR SIGNUP/OTHER OTPS
-const loginOtpRoutes = require("./routes/loginOtp"); // <-- ADD THIS LINE FOR LOGIN OTP
+const otpRoutes = require("./routes/otp");
+const loginOtpRoutes = require("./routes/loginOtp");
+const faceRoutes = require("./routes/faceRoutes");
+
+// 👇👇👇👇👇👇👇👇👇👇👇👇👇👇👇👇👇👇👇👇👇👇👇👇👇👇
+// 🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴
+const walletRoutes = require("./routes/wallet"); // 🟢 Add this line
 
 // REGISTER ROUTES — THESE ARE CASE SENSITIVE!
 app.use("/api/auth", authRoutes);
 app.use("/api/payment", paymentRoutes);
-app.use("/api/otp", otpRoutes); // Default (signup etc OTP)
-app.use("/api/login-otp", loginOtpRoutes); // <<--- ADD THIS LINE
+app.use("/api/otp", otpRoutes);
+app.use("/api/login-otp", loginOtpRoutes);
+app.use("/api/face", faceRoutes);
+
+// 👇👇👇👇👇👇👇👇👇👇👇👇👇👇👇👇👇👇👇👇👇👇👇👇👇👇
+// 🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴
+app.use("/api/wallet", walletRoutes); // 🟢 Add this line
 
 // Simple home route
 app.get("/", (req, res) => {
@@ -62,6 +72,10 @@ app.get("/", (req, res) => {
         getTransactions: "GET /api/payment/transactions (Protected)",
         getBalance: "GET /api/payment/balance (Protected)",
       },
+      wallet: {
+        // 🟢 Added for doc clarity
+        addMoney: "POST /api/wallet/add-money (Protected)",
+      },
       otp: {
         signup: {
           send: "POST /api/otp/send-otp",
@@ -71,6 +85,10 @@ app.get("/", (req, res) => {
           send: "POST /api/login-otp/send-otp",
           verify: "POST /api/login-otp/verify-otp",
         },
+      },
+      face: {
+        enroll: "POST /api/face/enroll (form-data: user_id, faceImage)",
+        verify: "POST /api/face/verify (form-data: user_id, faceImage)",
       },
     },
     documentation: {
@@ -104,6 +122,34 @@ app.get("/", (req, res) => {
           receiver_upi: "string",
           amount: "number",
           description: "string (optional)",
+        },
+      },
+      wallet: {
+        addMoney: {
+          method: "POST",
+          url: "/api/wallet/add-money",
+          body: { amount: "number" },
+          headers: { Authorization: "Bearer YOUR_JWT_TOKEN" },
+        },
+      },
+      face: {
+        enroll: {
+          method: "POST",
+          url: "/api/face/enroll",
+          contentType: "multipart/form-data",
+          body: {
+            user_id: "Mongo ObjectId (string)",
+            faceImage: "file (image)",
+          },
+        },
+        verify: {
+          method: "POST",
+          url: "/api/face/verify",
+          contentType: "multipart/form-data",
+          body: {
+            user_id: "Mongo ObjectId (string)",
+            faceImage: "file (image)",
+          },
         },
       },
     },
@@ -179,6 +225,16 @@ app.get("/api", (req, res) => {
           protected: true,
         },
       },
+      wallet: {
+        // 🟢 Added for doc clarity
+        addMoney: {
+          method: "POST",
+          path: "/api/wallet/add-money",
+          description: "Add money to wallet",
+          protected: true,
+          body: { amount: "number" },
+        },
+      },
       otp: {
         signup: {
           send: "POST /api/otp/send-otp",
@@ -187,6 +243,20 @@ app.get("/api", (req, res) => {
         login: {
           send: "POST /api/login-otp/send-otp",
           verify: "POST /api/login-otp/verify-otp",
+        },
+      },
+      face: {
+        enroll: {
+          method: "POST",
+          path: "/api/face/enroll",
+          description: "Enroll/register face for a user",
+          contentType: "multipart/form-data",
+        },
+        verify: {
+          method: "POST",
+          path: "/api/face/verify",
+          description: "Verify face for login/payment",
+          contentType: "multipart/form-data",
         },
       },
     },
@@ -212,6 +282,9 @@ app.use((req, res) => {
       "POST /api/otp/verify-otp",
       "POST /api/login-otp/send-otp",
       "POST /api/login-otp/verify-otp",
+      "POST /api/face/enroll",
+      "POST /api/face/verify",
+      "POST /api/wallet/add-money", // 🟢 Add this line!
     ],
   });
 });

@@ -6,15 +6,17 @@ const FaceScanStep = ({ next, back }) => {
   const [faceDetected, setFaceDetected] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [loadingStep, setLoadingStep] = useState("Initializing.. .");
+  const [loadingStep, setLoadingStep] = useState("Initializing...");
   const [scanProgress, setScanProgress] = useState(0);
   const [faceapi, setFaceapi] = useState(null);
   const [isScanning, setIsScanning] = useState(false);
   const [scanComplete, setScanComplete] = useState(false);
+
   const detectionInterval = useRef(null);
   const scanAnimationRef = useRef(null);
   const particlesRef = useRef([]);
 
+  // particles init
   useEffect(() => {
     particlesRef.current = Array.from({ length: 50 }, () => ({
       x: Math.random(),
@@ -24,14 +26,21 @@ const FaceScanStep = ({ next, back }) => {
     }));
   }, []);
 
+  // load face-api script and init
   useEffect(() => {
     const script = document.createElement("script");
     script.src =
       "https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js";
     script.async = true;
     script.onload = () => {
-      setFaceapi(window.faceapi);
-      init(window.faceapi);
+      if (window.faceapi) {
+        console.log("face-api.js loaded from CDN");
+        setFaceapi(window.faceapi);
+        init(window.faceapi);
+      } else {
+        setError("face-api.js loaded but faceapi not found on window");
+        setIsLoading(false);
+      }
     };
     script.onerror = () => {
       setError("Failed to load face-api.js from CDN");
@@ -42,15 +51,18 @@ const FaceScanStep = ({ next, back }) => {
     return () => {
       if (detectionInterval.current) clearInterval(detectionInterval.current);
       if (scanAnimationRef.current) clearInterval(scanAnimationRef.current);
+
       if (videoRef.current && videoRef.current.srcObject) {
         videoRef.current.srcObject.getTracks().forEach((t) => t.stop());
       }
+
       if (document.body.contains(script)) {
         document.body.removeChild(script);
       }
     };
   }, []);
 
+  // scanning animation logic
   useEffect(() => {
     if (faceDetected && !scanComplete) {
       setIsScanning(true);
@@ -93,7 +105,7 @@ const FaceScanStep = ({ next, back }) => {
       setIsLoading(false);
     } catch (err) {
       console.error("Initialization error:", err);
-      setError(err.message);
+      setError(err.message || "Initialization failed");
       setIsLoading(false);
     }
   };
@@ -102,11 +114,15 @@ const FaceScanStep = ({ next, back }) => {
     const MODEL_URL =
       "https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights";
     try {
-      await faceapiLib.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
-      console.log("Models loaded successfully");
+      await Promise.all([
+        faceapiLib.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+        faceapiLib.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+        faceapiLib.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
+      ]);
+      console.log("All face-api models loaded successfully");
     } catch (err) {
       console.error("Model loading error:", err);
-      throw new Error("Failed to load face detection models");
+      throw new Error("Failed to load face detection/recognition models");
     }
   };
 
@@ -123,9 +139,8 @@ const FaceScanStep = ({ next, back }) => {
         videoRef.current.srcObject = stream;
       }
     } catch (err) {
-      throw new Error(
-        "Camera access denied.  Please allow camera permissions.",
-      );
+      console.error("Camera error:", err);
+      throw new Error("Camera access denied. Please allow camera permissions.");
     }
   };
 
@@ -161,7 +176,7 @@ const FaceScanStep = ({ next, back }) => {
           const ctx = canvas.getContext("2d");
           ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-          if (detected) {
+          if (detected && resizedDetections.length > 0) {
             const detection = resizedDetections[0];
             drawFaceMesh(
               ctx,
@@ -175,6 +190,39 @@ const FaceScanStep = ({ next, back }) => {
         console.error("Detection error:", err);
       }
     }, 100);
+  };
+
+  const getFaceEmbeddingFromVideoFrame = async () => {
+    if (!faceapi || !videoRef.current) {
+      console.error("faceapi or video not ready");
+      return null;
+    }
+
+    try {
+      const result = await faceapi
+        .detectSingleFace(
+          videoRef.current,
+          new faceapi.TinyFaceDetectorOptions({
+            inputSize: 224,
+            scoreThreshold: 0.5,
+          }),
+        )
+        .withFaceLandmarks()
+        .withFaceDescriptor();
+
+      if (!result) {
+        console.warn("No face with descriptor detected");
+        return null;
+      }
+
+      const descriptor = result.descriptor;
+      const embeddingVector = Array.from(descriptor);
+      console.log("Face embedding length:", embeddingVector.length);
+      return embeddingVector;
+    } catch (err) {
+      console.error("Error generating face embedding:", err);
+      return null;
+    }
   };
 
   const drawFaceMesh = (ctx, box, width, height) => {
@@ -501,7 +549,7 @@ const FaceScanStep = ({ next, back }) => {
           {!isLoading && (
             <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10">
               <div
-                className={`px-6 py-2. 5 text-sm font-semibold rounded-full backdrop-blur-md transition-all duration-300 border-2 ${
+                className={`px-6 py-2.5 text-sm font-semibold rounded-full backdrop-blur-md transition-all duration-300 border-2 ${
                   scanComplete
                     ? "bg-green-500/90 text-white border-green-400 shadow-[0_0_20px_rgba(16,185,129,0.5)]"
                     : faceDetected
@@ -572,19 +620,37 @@ const FaceScanStep = ({ next, back }) => {
         <button
           disabled={!scanComplete || isLoading}
           onClick={async () => {
-            console.log("Continue button clicked - Capturing face image...");
+            console.log("Continue clicked");
 
-            const capturedImage = await captureFaceImage();
+            try {
+              console.log("Generating face embedding...");
+              const faceEmbedding = await getFaceEmbeddingFromVideoFrame();
 
-            console.log("Captured result:", {
-              success: Boolean(capturedImage),
-              isFile: capturedImage instanceof File,
-              name: capturedImage?.name,
-              size: capturedImage?.size,
-              type: capturedImage?.type,
-            });
+              console.log("Embedding result:", {
+                ok: !!faceEmbedding,
+                len: faceEmbedding?.length,
+                sample: faceEmbedding?.slice(0, 5),
+              });
 
-            if (capturedImage && capturedImage instanceof File) {
+              if (!faceEmbedding) {
+                alert(
+                  "Face vector generate nahi ho paya. Please apna face clearly dikhaye aur fir try karein.",
+                );
+                return;
+              }
+
+              console.log("Capturing face image...");
+              const capturedImage = await captureFaceImage();
+
+              console.log("Captured result:", {
+                success: Boolean(capturedImage),
+                isFile: capturedImage instanceof File,
+                name: capturedImage?.name,
+                size: capturedImage?.size,
+                type: capturedImage?.type,
+                embeddingLength: faceEmbedding.length,
+              });
+
               if (videoRef.current && videoRef.current.srcObject) {
                 const tracks = videoRef.current.srcObject.getTracks();
                 tracks.forEach((track) => {
@@ -593,11 +659,21 @@ const FaceScanStep = ({ next, back }) => {
                 });
               }
 
-              console.log("Passing face image to next step");
-              next({ faceImage: capturedImage });
-            } else {
-              console.error("Failed to capture valid face image");
-              alert("Failed to capture face image. Please try again.");
+              console.log("Calling next() from FaceScanStep...");
+              if (typeof next === "function") {
+                next({
+                  faceImage: capturedImage || null,
+                  faceEmbedding,
+                });
+                console.log("next() called successfully");
+              } else {
+                console.error("next prop is not a function:", next);
+              }
+            } catch (err) {
+              console.error("Error in Continue handler:", err);
+              alert(
+                "Kuch galat ho gaya face scan ke baad. Console check karo.",
+              );
             }
           }}
           className={`flex-1 py-3 rounded-xl font-semibold transition-all ${
