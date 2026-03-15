@@ -1,0 +1,31 @@
+@import "tailwindcss";
+/* ============================================
+   RECHARTS ERROR SUPPRESSION - GLOBAL FIX
+   ============================================ */
+
+/* Hide all broken charts */
+.recharts-wrapper[style*="width: -1"],
+.recharts-wrapper[style*="height: -1"],
+.recharts-responsive-container[style*="width: -1"],
+.recharts-responsive-container[style*="height: -1"] {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  position: absolute !important;
+  pointer-events: none !important;
+  z-index: -9999 !important;
+}
+
+/* Force proper dimensions */
+.recharts-wrapper,
+.recharts-responsive-container {
+  position: relative !important;
+  min-height: 200px !important;
+  min-width: 200px !important;
+}
+
+/* Hide parent containers with invalid dimensions */
+div:has(> .recharts-wrapper[style*="width: -1"]),
+div:has(> .recharts-responsive-container[style*="width: -1"]) {
+  display: none !important;
+}

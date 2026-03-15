@@ -1,0 +1,123 @@
+const Razorpay = require("razorpay");
+const crypto = require("crypto");
+
+// ─── Razorpay Instance ─────────────────────────────────────────────────────────
+const razorpay = new Razorpay({
+  key_id: process.env.RAZORPAY_KEY_ID,
+  key_secret: process.env.RAZORPAY_KEY_SECRET,
+});
+
+/**
+ * POST /api/razorpay/create-order
+ *
+ * Frontend se amount aata hai (paise mein convert karenge)
+ * Razorpay order create hota hai → order_id frontend ko milta hai
+ * Frontend us order_id se Razorpay checkout open karta hai
+ */
+exports.createRazorpayOrder = async (req, res) => {
+  try {
+    const { amount, payment_method, coupon } = req.body;
+
+    const numAmount = parseFloat(amount);
+    if (!numAmount || numAmount < 10 || numAmount > 50000) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid amount. Must be ₹10 to ₹50,000.",
+      });
+    }
+
+    // Fee calculate karo
+    let fee = 0;
+    if (payment_method === "card")       fee = parseFloat((numAmount * 0.02).toFixed(2));
+    if (payment_method === "netbanking") fee = 10;
+
+    const totalAmount = numAmount + fee;
+
+    // Razorpay amount paise mein hota hai (multiply by 100)
+    const amountInPaise = Math.round(totalAmount * 100);
+
+    const options = {
+      amount: amountInPaise,
+      currency: "INR",
+      receipt: "rcpt_" + Date.now(),
+      notes: {
+        payment_method: payment_method || "upi",
+        original_amount: numAmount,
+        fee: fee,
+        coupon: coupon || "",
+        user_id: req.userId || "",
+      },
+    };
+
+    const order = await razorpay.orders.create(options);
+
+    console.log(`✅ [Razorpay] Order created: ${order.id} | ₹${totalAmount}`);
+
+    return res.json({
+      success: true,
+      order_id: order.id,
+      amount: totalAmount,
+      amount_in_paise: amountInPaise,
+      currency: "INR",
+      key_id: process.env.RAZORPAY_KEY_ID, // Frontend ko chahiye checkout ke liye
+      fee: fee,
+      original_amount: numAmount,
+    });
+  } catch (error) {
+    console.error("❌ [Razorpay] Create order error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to create payment order. Please try again.",
+    });
+  }
+};
+
+/**
+ * POST /api/razorpay/verify
+ *
+ * Payment complete hone ke baad frontend ye call karta hai
+ * Signature verify karke confirm karta hai payment genuine hai
+ * Iske baad /api/dashboard/add-money call hoti hai
+ */
+exports.verifyPayment = async (req, res) => {
+  try {
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } =
+      req.body;
+
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing payment verification details",
+      });
+    }
+
+    // Signature verify karo
+    const expectedSignature = crypto
+      .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
+      .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+      .digest("hex");
+
+    if (expectedSignature !== razorpay_signature) {
+      console.error("❌ [Razorpay] Signature mismatch");
+      return res.status(400).json({
+        success: false,
+        message: "Payment verification failed. Signature invalid.",
+      });
+    }
+
+    console.log(`✅ [Razorpay] Payment verified: ${razorpay_payment_id}`);
+
+    return res.json({
+      success: true,
+      message: "Payment verified successfully",
+      payment_id: razorpay_payment_id,
+      order_id: razorpay_order_id,
+    });
+  } catch (error) {
+    console.error("❌ [Razorpay] Verify error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Payment verification failed",
+    });
+  }
+};
