@@ -2,6 +2,7 @@ const Transaction = require("../models/Transaction");
 const Wallet = require("../models/Wallet");
 const User = require("../models/User");
 const mongoose = require("mongoose");
+const { sendNotification } = require("../utils/notification");
 
 // Helper to generate transaction ID
 function generateTransactionId() {
@@ -27,20 +28,54 @@ exports.getHistory = async (req, res) => {
       .sort({ createdAt: -1 })
       .lean();
 
-    // Map to frontend format expected by SendMoneyPremium.jsx
-    const formatted = transactions.map((t) => ({
-      id: t._id,
-      // Determine user-facing type based on flow or infer from fields
-      type: t.flow || (t.sender?.toString() === userId ? "send" : "receive"),
-      category: t.category || "Other",
-      // Use recipient field if available, otherwise counterparty name/ID
-      name: t.recipient || (t.counterparty_id ? "User" : "Unknown"),
-      amount: t.amount,
-      time: t.createdAt,
-      details: t.note || t.description || "",
-      transactionId: t.transaction_id,
-      avatar: null, // optional – can be populated later
-    }));
+    const formatted = await Promise.all(
+      transactions.map(async (t) => {
+        let displayName = t.title || t.description;
+
+        const isMeSender =
+          (t.sender && t.sender.toString() === userId.toString()) ||
+          (t.user_id?.toString() === userId.toString() && t.type === "debit");
+
+        if (!displayName) {
+          if (t.flow === "add_money") {
+            displayName = "Money Added";
+          } else if (t.flow === "withdrawal") {
+            displayName = "Withdrawal";
+          } else if (isMeSender) {
+            // I am the sender, show who I sent it to
+            if (mongoose.Types.ObjectId.isValid(t.recipient)) {
+              const receiverUser = await User.findById(t.recipient)
+                .select("name")
+                .lean();
+              displayName = receiverUser ? receiverUser.name : "Recipient";
+            } else {
+              displayName = t.recipient || "Payment";
+            }
+          } else {
+            // I am the receiver, show who sent it
+            const senderUser = await User.findById(t.sender || t.user_id)
+              .select("name")
+              .lean();
+            displayName = senderUser ? senderUser.name : "Sender";
+          }
+        }
+
+        return {
+          id: t._id,
+          type: isMeSender ? "sent" : "received",
+          flow: t.flow || (t.type === "credit" ? "receive" : "send"),
+          category: t.category || "Payment",
+          name: displayName,
+          amount: t.amount,
+          time: t.createdAt,
+          date: new Date(t.createdAt).toISOString().split("T")[0],
+          status: t.status || "Success",
+          details: t.note || t.description || "",
+          transactionId: t.transaction_id || t.transactionId,
+          avatar: null,
+        };
+      }),
+    );
 
     res.json({ success: true, transactions: formatted });
   } catch (error) {
@@ -162,6 +197,18 @@ exports.sendMoney = async (req, res) => {
       ],
       { session },
     );
+
+    await sendNotification(senderId, {
+      title: "Money Sent Successfully",
+      message: `You've sent ₹${amount} to ${recipient}. Transaction ID: ${senderTxnId}`,
+      type: "success",
+    });
+
+    await sendNotification(receiver._id, {
+      title: "Money Received",
+      message: `You've received ₹${amount} in your wallet.`,
+      type: "success",
+    });
 
     await session.commitTransaction();
     session.endSession();

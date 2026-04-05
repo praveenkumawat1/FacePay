@@ -14,11 +14,10 @@ const storage = multer.diskStorage({
     cb(null, uniqueName);
   },
 });
-
 const upload = multer({
   storage: storage,
   limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB max
+    fileSize: 1 * 1024 * 1024, // 1MB max
   },
   fileFilter: (req, file, cb) => {
     const allowedTypes = /jpeg|jpg|png/;
@@ -35,10 +34,32 @@ const upload = multer({
   },
 });
 
+const sharp = require("sharp");
+
+// Middleware to resize image after upload (before controller)
+async function resizeFaceImage(req, res, next) {
+  if (!req.file) return next();
+  try {
+    const resizedPath = req.file.path.replace(
+      /(\.jpg|\.jpeg|\.png)$/i,
+      "_resized$1",
+    );
+    await sharp(req.file.path)
+      .resize(500, 500, { fit: "cover" })
+      .jpeg({ quality: 80 })
+      .toFile(resizedPath);
+    req.file.path = resizedPath;
+    req.file.filename = resizedPath.split("/").pop();
+    next();
+  } catch (err) {
+    next(err);
+  }
+}
+
 /**
  * POST /api/aws-face/enroll
  * Enroll face in AWS Rekognition
  */
-router.post("/enroll", upload.single("faceImage"), enrollFace); // ⚡ Use imported function
+router.post("/enroll", upload.single("faceImage"), resizeFaceImage, enrollFace); // ⚡ Use imported function
 
 module.exports = router;

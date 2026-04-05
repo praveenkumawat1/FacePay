@@ -778,7 +778,7 @@ const ScratchCard = ({ onClose, onReveal }) => {
 // ─────────────────────────────────────────────────────────────
 //  LEADERBOARD MODAL
 // ─────────────────────────────────────────────────────────────
-const RANK_ICONS = [FiAward, FiTrendingUp, FiStar];
+const RANK_ICONS = [FiAward, FiTrendingUp, FiStar, FiChevronRight];
 
 const LeaderboardModal = ({ coins, onClose, darkMode }) => {
   const dm = darkMode;
@@ -789,16 +789,20 @@ const LeaderboardModal = ({ coins, onClose, darkMode }) => {
   useEffect(() => {
     const fetchLeaderboard = async () => {
       try {
-        // FIX: Include auth token in leaderboard request
-        const token = localStorage.getItem("token");
-        const response = await fetch("/api/coupons/leaderboard", {
-          headers: { Authorization: `Bearer ${token}` },
+        // FIX: Use correct endpoint /api/leaderboard and correct token key facepay_token
+        const token = localStorage.getItem("facepay_token");
+        const response = await fetch("/api/leaderboard", {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
         });
-        if (!response.ok) throw new Error("Failed");
+        if (!response.ok) throw new Error("Failed to fetch leaderboard");
         const data = await response.json();
+        // The API returns an array directly
         setLeaderboard(Array.isArray(data) ? data : []);
       } catch (err) {
-        console.error("Failed to fetch leaderboard", err);
+        console.error("Leaderboard fetch error:", err);
         setError(true);
       } finally {
         setLoading(false);
@@ -815,11 +819,21 @@ const LeaderboardModal = ({ coins, onClose, darkMode }) => {
 
   if (loading) {
     return (
-      <div
-        className="fixed inset-0 z-50 flex items-center justify-center p-4"
-        style={{ background: "rgba(2,6,23,0.6)", backdropFilter: "blur(8px)" }}
-      >
-        <div className="w-16 h-16 border-4 border-t-transparent rounded-full animate-spin border-indigo-400" />
+      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm transition-opacity">
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="w-full max-w-[400px] rounded-[24px] p-8 text-center"
+          style={{ ...card }}
+        >
+          <div className="w-12 h-12 border-4 border-t-transparent rounded-full animate-spin border-indigo-500 mx-auto mb-4" />
+          <p
+            className="font-bold text-sm tracking-wide"
+            style={{ color: textSec }}
+          >
+            Fetching Rankings...
+          </p>
+        </motion.div>
       </div>
     );
   }
@@ -871,75 +885,98 @@ const LeaderboardModal = ({ coins, onClose, darkMode }) => {
             No data yet.
           </div>
         ) : (
-          <div className="flex flex-col gap-[9px]">
+          <div className="flex flex-col gap-[9px] max-h-[480px] overflow-y-auto pr-1">
             {leaderboard.map((u, i) => {
-              const RIcon = RANK_ICONS[u.rank - 1] || FiChevronRight;
+              const RIcon = RANK_ICONS[u.rank - 1] || RANK_ICONS[3];
               return (
                 <div
-                  key={u.rank}
-                  className="flex items-center gap-3 px-[14px] py-3 rounded-[14px]"
-                  style={{
-                    background: u.isMe
-                      ? dm
-                        ? "rgba(79,70,229,0.18)"
-                        : "#eff6ff"
-                      : dm
-                        ? "rgba(255,255,255,0.04)"
-                        : "#f8fafc",
-                    border: u.isMe
-                      ? "1.5px solid #c7d2fe"
-                      : dm
-                        ? "1px solid #334155"
-                        : "1px solid #f1f5f9",
-                  }}
+                  key={u.rank + (u.isMe ? "-me" : "")}
+                  className={`flex flex-col gap-2 ${u.isGap ? "mt-3 pt-3 border-t border-dashed border-slate-500/30" : ""}`}
                 >
+                  {u.isGap && (
+                    <div
+                      className="text-[10px] font-bold text-center uppercase tracking-widest opacity-40 mb-1"
+                      style={{ color: textSec }}
+                    >
+                      Your Position
+                    </div>
+                  )}
                   <div
-                    className="w-8 h-8 rounded-[10px] flex items-center justify-center"
+                    className="flex items-center gap-3 px-[14px] py-3 rounded-[14px]"
                     style={{
                       background: u.isMe
-                        ? "linear-gradient(135deg,#4f46e5,#7c3aed)"
+                        ? dm
+                          ? "rgba(79,70,229,0.22)"
+                          : "#eff6ff"
                         : dm
-                          ? "rgba(255,255,255,0.06)"
-                          : "#f1f5f9",
+                          ? "rgba(255,255,255,0.04)"
+                          : "#f8fafc",
+                      border: u.isMe
+                        ? dm
+                          ? "1.5px solid #6366f1"
+                          : "1.5px solid #c7d2fe"
+                        : dm
+                          ? "1px solid #334155"
+                          : "1px solid #f1f5f9",
                     }}
                   >
-                    <RIcon
-                      size={14}
-                      color={
-                        u.isMe
-                          ? "#fff"
-                          : i === 0
-                            ? "#f59e0b"
-                            : i === 1
-                              ? "#94a3b8"
-                              : i === 2
-                                ? "#b45309"
-                                : "#64748b"
-                      }
-                    />
-                  </div>
-                  <div className="flex-1">
-                    <p
-                      className="font-bold text-[13px]"
-                      style={{ color: u.isMe ? "#4f46e5" : textPri }}
+                    <div
+                      className="w-8 h-8 rounded-[10px] flex items-center justify-center flex-shrink-0"
+                      style={{
+                        background: u.isMe
+                          ? "linear-gradient(135deg,#4f46e5,#7c3aed)"
+                          : dm
+                            ? "rgba(255,255,255,0.06)"
+                            : "#f1f5f9",
+                      }}
                     >
-                      {u.name}
-                      {u.isMe && (
-                        <span
-                          className="ml-2 text-[10px] px-[7px] py-[1px] rounded-[6px]"
-                          style={{ background: "#e0e7ff", color: "#4f46e5" }}
-                        >
-                          You
-                        </span>
-                      )}
-                    </p>
-                    <p className="text-[10px]" style={{ color: textSec }}>
-                      {u.tier || "Gold"} Tier
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-1 font-extrabold text-[13px] text-amber-400">
-                    <FiStar size={11} fill="#f59e0b" />{" "}
-                    {u.isMe ? coins : u.coins}
+                      <RIcon
+                        size={14}
+                        color={
+                          u.isMe
+                            ? "#fff"
+                            : u.rank === 1
+                              ? "#f59e0b"
+                              : u.rank === 2
+                                ? "#94a3b8"
+                                : u.rank === 3
+                                  ? "#b45309"
+                                  : "#64748b"
+                        }
+                      />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p
+                        className="font-bold text-[13px] truncate"
+                        style={{
+                          color: u.isMe
+                            ? dm
+                              ? "#818cf8"
+                              : "#4f46e5"
+                            : textPri,
+                        }}
+                      >
+                        {u.name}
+                        {u.isMe && (
+                          <span
+                            className="ml-2 text-[9px] px-[6px] py-[0.5px] rounded-[4px] font-black uppercase tracking-tighter"
+                            style={{
+                              background: dm ? "#4338ca" : "#e0e7ff",
+                              color: dm ? "#e0e7ff" : "#4338ca",
+                            }}
+                          >
+                            You
+                          </span>
+                        )}
+                      </p>
+                      <p className="text-[10px]" style={{ color: textSec }}>
+                        Rank #{u.rank}
+                      </p>
+                    </div>
+                    <div className="text-right flex items-center gap-1 font-extrabold text-[13px] text-amber-500">
+                      <FiStar size={11} fill="#f59e0b" />{" "}
+                      {u.coins.toLocaleString()}
+                    </div>
                   </div>
                 </div>
               );
@@ -1607,71 +1644,68 @@ export default function CouponsOffers() {
   const [hasShield, setHasShield] = useState(false);
   const [section, setSection] = useState("rewards");
 
-  const getToken = () => localStorage.getItem("token");
+  const getToken = () =>
+    localStorage.getItem("facepay_token") || localStorage.getItem("token");
+
+  const fetchData = async () => {
+    try {
+      const token = getToken();
+      const headers = { Authorization: `Bearer ${token}` };
+
+      const [userRes, marketplaceRes, couponsRes] = await Promise.all([
+        fetch("/api/user/stats", { headers }).catch(() => null),
+        fetch("/api/marketplace").catch(() => null),
+        fetch("/api/coupons").catch(() => null),
+      ]);
+
+      if (userRes?.ok) {
+        const u = await userRes.json();
+        setCoins(u.coins ?? 0);
+        setStreak(u.streak ?? 0);
+        setClaimedToday(u.claimedToday ?? false);
+        setReferralCode(u.referralCode ?? "");
+        setTotalCashback(u.totalCashback ?? 0);
+        // backend field is referralChainBonus
+        setReferralBonus(u.referralChainBonus ?? u.referralBonus ?? 0);
+        // backend field is billSplitRewards
+        setSplitRewards(u.billSplitRewards ?? u.splitRewards ?? 0);
+        setUpiStreak(u.upiStreak ?? 0);
+        setScratchAvail(u.scratchAvail ?? false);
+        setHasShield(u.hasShield ?? false);
+        // If dashboard includes marketplace/coupons inline, use them
+        if (u.marketplace)
+          setMarketplace(Array.isArray(u.marketplace) ? u.marketplace : []);
+        if (u.activeCoupons)
+          setCoupons(Array.isArray(u.activeCoupons) ? u.activeCoupons : []);
+      } else {
+        console.warn("Failed to fetch user stats");
+      }
+
+      if (marketplaceRes?.ok) {
+        const d = await marketplaceRes.json();
+        setMarketplace(Array.isArray(d) ? d : []);
+      } else {
+        setMarketplace([]);
+      }
+
+      if (couponsRes?.ok) {
+        const d = await couponsRes.json();
+        setCoupons(Array.isArray(d) ? d : []);
+      } else {
+        setCoupons([]);
+      }
+    } catch (error) {
+      console.error("Failed to fetch data:", error);
+      toast.error("Failed to load data");
+      setMarketplace([]);
+      setCoupons([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // ── Fetch all dashboard data ───────────────────────────────
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const token = getToken();
-        const headers = { Authorization: `Bearer ${token}` };
-
-        const [userRes, marketplaceRes, couponsRes] = await Promise.all([
-          fetch("/api/coupons/dashboard", { headers }).catch(() => null),
-          fetch("/api/marketplace").catch(() => null),
-          fetch("/api/coupons").catch(() => null),
-        ]);
-
-        if (userRes?.ok) {
-          const u = await userRes.json();
-          setCoins(u.coins ?? 0);
-          setStreak(u.streak ?? 0);
-          setClaimedToday(u.claimedToday ?? false);
-          setReferralCode(u.referralCode ?? "");
-          setTotalCashback(u.totalCashback ?? 0);
-          // backend field is referralChainBonus
-          setReferralBonus(u.referralChainBonus ?? u.referralBonus ?? 0);
-          // backend field is billSplitRewards
-          setSplitRewards(u.billSplitRewards ?? u.splitRewards ?? 0);
-          setUpiStreak(u.upiStreak ?? 0);
-          setScratchAvail(u.scratchAvail ?? false);
-          setHasShield(u.hasShield ?? false);
-          // If dashboard includes marketplace/coupons inline, use them
-          if (u.marketplace)
-            setMarketplace(Array.isArray(u.marketplace) ? u.marketplace : []);
-          if (u.activeCoupons)
-            setCoupons(Array.isArray(u.activeCoupons) ? u.activeCoupons : []);
-          // If dashboard returns marketplace & coupons inline, use them
-          if (u.marketplace)
-            setMarketplace(Array.isArray(u.marketplace) ? u.marketplace : []);
-          if (u.activeCoupons)
-            setCoupons(Array.isArray(u.activeCoupons) ? u.activeCoupons : []);
-        } else {
-          console.warn("Failed to fetch user stats");
-        }
-
-        if (marketplaceRes?.ok) {
-          const d = await marketplaceRes.json();
-          setMarketplace(Array.isArray(d) ? d : []);
-        } else {
-          setMarketplace([]);
-        }
-
-        if (couponsRes?.ok) {
-          const d = await couponsRes.json();
-          setCoupons(Array.isArray(d) ? d : []);
-        } else {
-          setCoupons([]);
-        }
-      } catch (error) {
-        console.error("Failed to fetch data:", error);
-        toast.error("Failed to load data");
-        setMarketplace([]);
-        setCoupons([]);
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchData();
   }, []);
 
@@ -1721,7 +1755,8 @@ export default function CouponsOffers() {
         return;
       }
 
-      const res = await fetch("/api/coupons/claim-daily", {
+      // FIX: Use correctly mounted backend endpoints
+      const res = await fetch("/api/claim-daily", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -1741,10 +1776,12 @@ export default function CouponsOffers() {
         return;
       }
 
-      if (data.success && !data.claimedToday) {
-        const newCoins = data.newBalance ?? data.newCoins ?? coins;
-        const newStreak = data.newStreak ?? data.streak ?? streak;
+      if (data.success || data.newCoins) {
+        const newCoins =
+          data.newCoins ?? data.newBalance ?? data.coins ?? coins + 50;
+        const newStreak = data.streak ?? data.newStreak ?? streak + 1;
         const reward = data.reward ?? 50;
+
         setCoins(newCoins);
         setStreak(newStreak);
         setClaimedToday(true);
@@ -1788,9 +1825,11 @@ export default function CouponsOffers() {
       });
       const data = await res.json();
       if (data.success) {
-        setCoins(data.newCoins);
+        setCoins(data.newCoins || data.newBalance);
         toast.success(`Redeemed ${item.title}!`);
-      } else toast.error(data.error || "Redemption failed");
+        // Refresh coupons list since a new one might be added
+        fetchData();
+      } else toast.error(data.error || data.message || "Redemption failed");
     } catch {
       toast.error("Redemption failed");
     }
@@ -1805,35 +1844,14 @@ export default function CouponsOffers() {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  // FIX: Consistent coin math + proper mystery reward messaging
   const handleSpinEnd = async (result) => {
     const SPIN_COST = 10;
-    let coinDelta = -SPIN_COST; // always deduct cost first
+    // We'll trust the server for the final amount
 
-    if (typeof result.value === "number" && result.value > 0) {
-      coinDelta += result.value; // e.g. +50 cash = -10 + 50 = +40 net
-      toast.success(`Won ${result.label}!`);
-      boom();
-    } else if (result.value === "coupon") {
-      // No extra coins, coupon added separately
-      toast.success("Free coupon added!");
-      boom();
-    } else if (result.value === "mystery") {
-      const mysteryCoins = 75;
-      coinDelta += mysteryCoins; // -10 + 75 = +65 net
-      toast.success(`Mystery Box: +${mysteryCoins} coins!`);
-      boom();
-    } else {
-      toast("Better luck next time!");
-    }
-
-    // Optimistic update
-    setCoins((c) => c + coinDelta);
-
-    // Sync with backend — use /api/coupons/spin to confirm & get server coins
+    // Sync with backend — use proper /api/spin-result endpoint
     try {
       const token = getToken();
-      const res = await fetch("/api/coupons/spin", {
+      const res = await fetch("/api/spin-result", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1842,11 +1860,26 @@ export default function CouponsOffers() {
         body: JSON.stringify({ result }),
       });
       const data = await res.json();
-      // Backend returns newBalance (confirmed server coins)
-      if (data?.newBalance !== undefined) setCoins(data.newBalance);
-      else if (data?.newCoins !== undefined) setCoins(data.newCoins);
+
+      if (data.success || data.newCoins) {
+        const newTotal = data.newCoins || data.newBalance;
+        setCoins(newTotal);
+
+        if (result.value === 0) {
+          toast("Better luck next time!");
+        } else {
+          toast.success(`Won ${result.label}!`);
+          boom();
+        }
+
+        // Refresh coupons if a coupon was won
+        if (result.type === "coupon") fetchData();
+      } else {
+        toast.error(data.error || data.message || "Spin failed");
+      }
     } catch (err) {
       console.error("Failed to sync spin result with backend", err);
+      toast.error("Network error sync failed");
     }
   };
 
@@ -1855,10 +1888,13 @@ export default function CouponsOffers() {
     if (!prize.toLowerCase().includes("luck")) {
       toast.success(`Won ${prize}!`);
       boom();
-    } else toast("Better luck next time!");
+    } else {
+      toast("Better luck next time!");
+    }
+
     try {
       const token = getToken();
-      const res = await fetch("/api/coupons/scratch-reveal", {
+      const res = await fetch("/api/scratch-reveal", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1867,9 +1903,16 @@ export default function CouponsOffers() {
         body: JSON.stringify({ prize }),
       });
       const data = await res.json();
-      if (data?.newCoins !== undefined) setCoins(data.newCoins);
+
+      if (data.success || data.newCoins !== undefined) {
+        setCoins(data.newCoins || data.newBalance);
+        fetchData(); // Sync state to ensure UI matches DB (especially scratch availability)
+      } else {
+        toast.error(data.error || "Failed to save scratch reward");
+      }
     } catch (err) {
       console.error("Failed to send scratch result", err);
+      toast.error("Network error: scratch reveal failed");
     }
   };
 
@@ -1886,10 +1929,12 @@ export default function CouponsOffers() {
       });
       const data = await res.json();
       if (data.success) {
-        setCoins(data.newCoins);
+        setCoins(data.newCoins || data.newBalance);
         toast.success(`+${reward} coins!`);
         boom();
-      } else toast.error(data.error || "Claim failed");
+        // Refresh missions list to show as completed
+        fetchData();
+      } else toast.error(data.error || data.message || "Claim failed");
     } catch {
       toast.error("Claim failed");
     }
@@ -1900,16 +1945,23 @@ export default function CouponsOffers() {
       const token = getToken();
       const res = await fetch("/api/shield/purchase", {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
       });
       const data = await res.json();
-      if (data.success) {
-        setCoins(data.newCoins);
+      if (data.success || data.newCoins) {
+        setCoins(data.newCoins || data.newBalance);
         setHasShield(true);
         toast.success("Streak Shield activated!");
-      } else toast.error(data.error || "Purchase failed");
-    } catch {
-      toast.error("Purchase failed");
+        fetchData(); // Sync everything
+      } else {
+        toast.error(data.error || data.message || "Purchase failed");
+      }
+    } catch (err) {
+      console.error("Shield purchase error", err);
+      toast.error("Network error: Purchase failed");
     }
   };
 

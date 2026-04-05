@@ -7,6 +7,7 @@ const Mission = require("../models/Mission");
 const UserMission = require("../models/UserMission");
 const User = require("../models/User");
 const CoinHistory = require("../models/CoinHistory");
+const { sendNotification } = require("../utils/notification");
 
 async function recordHistory(userId, label, coins, type = "credit") {
   try {
@@ -101,6 +102,12 @@ router.post("/claim", auth, async (req, res) => {
     const user = await User.findById(req.userId);
     user.coins += mission.reward;
     await user.save();
+
+    await sendNotification(user._id, {
+      title: "Mission Accomplished!",
+      message: `You've earned ${mission.reward} coins for completing: ${mission.title}`,
+      type: "success",
+    });
 
     await recordHistory(
       req.userId,

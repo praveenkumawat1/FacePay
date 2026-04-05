@@ -17,6 +17,8 @@ import {
   FiSearch,
   FiArrowUpRight,
   FiArrowDownLeft,
+  FiTrendingUp,
+  FiTarget,
   FiTag,
   FiClock,
   FiCheck,
@@ -27,15 +29,32 @@ import {
   FiSun,
   FiGlobe,
 } from "react-icons/fi";
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import AddMoneyModal from "../pages/AddMoneyModal";
 import { activeCoupons } from "./CouponsOffers";
 import { saveAs } from "file-saver";
 import { DashboardProvider, useDashboard } from "./DashboardContext";
-import SendMoneyFlow from "../pages/SendMoneyFlow"; // ✅ Import
+import SendMoneyFlow from "../pages/SendMoneyFlow";
+import WithdrawalModal from "../pages/WithdrawalModal";
+import RequestMoneyFlow from "../pages/RequestMoneyFlow";
 
-// ─── ACTION BUTTON (Generic) ──────────────────────────────────────────────────
+const API = "http://localhost:5000";
+
+// ─── Helper: apiFetch with auth header ───────────────────────────────────────
+async function apiFetch(path, opts = {}) {
+  const token = localStorage.getItem("facepay_token");
+  return fetch(`${API}${path}`, {
+    ...opts,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+      ...(opts.headers || {}),
+    },
+  });
+}
+
+// ─── ACTION BUTTON ────────────────────────────────────────────────────────────
 const ActionButton = ({ icon, label, onClick, delay }) => {
   const { darkMode } = useDashboard();
   return (
@@ -78,18 +97,13 @@ const ActionButton = ({ icon, label, onClick, delay }) => {
   );
 };
 
-// ─── TOGGLE SWITCH ────────────────────────────────────────────────────────────
 const ToggleSwitch = ({ value, onChange }) => (
   <button
     onClick={() => onChange(!value)}
-    className={`relative w-11 h-6 rounded-full transition-colors duration-300 focus:outline-none flex-shrink-0 ${
-      value ? "bg-indigo-600" : "bg-slate-300"
-    }`}
+    className={`relative w-11 h-6 rounded-full transition-colors duration-300 focus:outline-none shrink-0 ${value ? "bg-indigo-600" : "bg-slate-300"}`}
   >
     <span
-      className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform duration-300 ${
-        value ? "translate-x-5" : "translate-x-0"
-      }`}
+      className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform duration-300 ${value ? "translate-x-5" : "translate-x-0"}`}
     />
   </button>
 );
@@ -107,7 +121,6 @@ const SettingsPopup = ({ onBack, onClose }) => {
     setNotifications,
     t,
   } = useDashboard();
-
   const [saved, setSaved] = useState(false);
   const dm = darkMode;
 
@@ -126,20 +139,14 @@ const SettingsPopup = ({ onBack, onClose }) => {
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: 20 }}
       transition={{ duration: 0.2 }}
-      className={`absolute right-0 mt-2 w-72 rounded-2xl shadow-2xl border z-50 overflow-hidden ${
-        dm ? "bg-slate-800/95 border-slate-700" : "bg-white/90 border-slate-100"
-      }`}
+      className={`absolute right-0 mt-2 w-72 rounded-2xl shadow-2xl border z-50 overflow-hidden ${dm ? "bg-slate-800/95 border-slate-700" : "bg-white/90 border-slate-100"}`}
       style={{
         backdropFilter: "blur(20px)",
         boxShadow: "0 8px 40px rgba(80,80,180,0.15)",
       }}
     >
       <div
-        className={`flex items-center gap-3 px-4 py-3.5 border-b ${
-          dm
-            ? "border-slate-700 bg-slate-900/50"
-            : "border-slate-100 bg-gradient-to-r from-indigo-50 to-purple-50"
-        }`}
+        className={`flex items-center gap-3 px-4 py-3.5 border-b ${dm ? "border-slate-700 bg-slate-900/50" : "border-slate-100 bg-linear-to-r from-indigo-50 to-purple-50"}`}
       >
         <button
           onClick={onBack}
@@ -174,7 +181,7 @@ const SettingsPopup = ({ onBack, onClose }) => {
         >
           <div className="flex items-center gap-3">
             <div
-              className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${dm ? "bg-slate-700 group-hover:bg-indigo-900" : "bg-slate-100 group-hover:bg-indigo-100"}`}
+              className={`w-8 h-8 rounded-lg flex items-center justify-center ${dm ? "bg-slate-700" : "bg-slate-100"}`}
             >
               {darkMode ? (
                 <FiMoon size={14} className="text-indigo-400" />
@@ -204,7 +211,7 @@ const SettingsPopup = ({ onBack, onClose }) => {
         >
           <div className="flex items-center gap-3">
             <div
-              className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${dm ? "bg-slate-700 group-hover:bg-indigo-900" : "bg-slate-100 group-hover:bg-indigo-100"}`}
+              className={`w-8 h-8 rounded-lg flex items-center justify-center ${dm ? "bg-slate-700" : "bg-slate-100"}`}
             >
               <FiBell
                 size={14}
@@ -239,11 +246,11 @@ const SettingsPopup = ({ onBack, onClose }) => {
 
         {/* Language */}
         <div
-          className={`px-3 py-2.5 rounded-xl transition-colors group ${dm ? "hover:bg-slate-700/50" : "hover:bg-slate-50"}`}
+          className={`px-3 py-2.5 rounded-xl ${dm ? "hover:bg-slate-700/50" : "hover:bg-slate-50"}`}
         >
           <div className="flex items-center gap-3 mb-2">
             <div
-              className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${dm ? "bg-slate-700 group-hover:bg-indigo-900" : "bg-slate-100 group-hover:bg-indigo-100"}`}
+              className={`w-8 h-8 rounded-lg flex items-center justify-center ${dm ? "bg-slate-700" : "bg-slate-100"}`}
             >
               <FiGlobe size={14} className="text-indigo-400" />
             </div>
@@ -256,7 +263,7 @@ const SettingsPopup = ({ onBack, onClose }) => {
           <select
             value={language}
             onChange={(e) => setLanguage(e.target.value)}
-            className={`w-full text-xs rounded-lg px-3 py-2 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-400 cursor-pointer border-0 ${dm ? "bg-slate-700 text-slate-200" : "bg-slate-100 text-slate-700"}`}
+            className={`w-full text-xs rounded-lg px-3 py-2 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-400 border-0 ${dm ? "bg-slate-700 text-slate-200" : "bg-slate-100 text-slate-700"}`}
           >
             {["English", "Hindi", "Gujarati", "Marathi", "Tamil", "Telugu"].map(
               (l) => (
@@ -268,11 +275,11 @@ const SettingsPopup = ({ onBack, onClose }) => {
 
         {/* Currency */}
         <div
-          className={`px-3 py-2.5 rounded-xl transition-colors group ${dm ? "hover:bg-slate-700/50" : "hover:bg-slate-50"}`}
+          className={`px-3 py-2.5 rounded-xl ${dm ? "hover:bg-slate-700/50" : "hover:bg-slate-50"}`}
         >
           <div className="flex items-center gap-3 mb-2">
             <div
-              className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${dm ? "bg-slate-700 group-hover:bg-indigo-900" : "bg-slate-100 group-hover:bg-indigo-100"}`}
+              className={`w-8 h-8 rounded-lg flex items-center justify-center ${dm ? "bg-slate-700" : "bg-slate-100"}`}
             >
               <span className="text-sm font-bold text-indigo-400">₹</span>
             </div>
@@ -285,7 +292,7 @@ const SettingsPopup = ({ onBack, onClose }) => {
           <select
             value={currency}
             onChange={(e) => setCurrency(e.target.value)}
-            className={`w-full text-xs rounded-lg px-3 py-2 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-400 cursor-pointer border-0 ${dm ? "bg-slate-700 text-slate-200" : "bg-slate-100 text-slate-700"}`}
+            className={`w-full text-xs rounded-lg px-3 py-2 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-400 border-0 ${dm ? "bg-slate-700 text-slate-200" : "bg-slate-100 text-slate-700"}`}
           >
             {["INR (₹)", "USD ($)", "EUR (€)", "GBP (£)"].map((c) => (
               <option key={c}>{c}</option>
@@ -297,11 +304,7 @@ const SettingsPopup = ({ onBack, onClose }) => {
       <div className="px-4 pb-4">
         <button
           onClick={handleSave}
-          className={`w-full py-2.5 rounded-xl text-sm font-bold transition-all duration-300 flex items-center justify-center gap-2 ${
-            saved
-              ? "bg-green-500 text-white"
-              : "bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-200/50"
-          }`}
+          className={`w-full py-2.5 rounded-xl text-sm font-bold transition-all duration-300 flex items-center justify-center gap-2 ${saved ? "bg-green-500 text-white" : "bg-indigo-600 hover:bg-indigo-700 text-white"}`}
         >
           {saved ? (
             <>
@@ -322,30 +325,47 @@ function DashboardInner() {
   const [rewardCopied, setRewardCopied] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
+  const isEmbed = new URLSearchParams(location.search).get("embed") === "true";
   const isRoot = location.pathname === "/dashboard";
 
   const [user, setUser] = useState(null);
   const [wallet, setWallet] = useState(null);
   const [transactions, setTransactions] = useState([]);
-  const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showBalance, setShowBalance] = useState(true);
   const [notiCount, setNotiCount] = useState(0);
   const [showAddMoney, setShowAddMoney] = useState(false);
+  const [showWithdraw, setShowWithdraw] = useState(false);
   const [showRewards, setShowRewards] = useState(false);
   const [showAIAssist, setShowAIAssist] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
-  const [showSendMoney, setShowSendMoney] = useState(false); // ✅ NEW
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const [popupView, setPopupView] = useState(null);
   const profileRef = useRef(null);
   const [rewardCode, setRewardCode] = useState(null);
   const [rewardExpiry, setRewardExpiry] = useState(null);
   const [rewardCountdown, setRewardCountdown] = useState("");
   const [aiQuery, setAiQuery] = useState("");
-  const [aiResponse, setAiResponse] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
-  const [aiMode, setAiMode] = useState(null);
+  const [chatHistory, setChatHistory] = useState([
+    {
+      role: "ai",
+      content: "Hello! I'm your FacePay AI. How can I help you today?",
+    },
+  ]);
+  const chatEndRef = useRef(null);
   const [filterType, setFilterType] = useState("all");
+
+  const scrollToBottom = () => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    if (showAIAssist) {
+      scrollToBottom();
+    }
+  }, [chatHistory, showAIAssist]);
 
   const dm = darkMode;
   const bgMain = dm
@@ -357,18 +377,175 @@ function DashboardInner() {
   const textPrimary = dm ? "text-slate-100" : "text-slate-900";
   const textSecondary = dm ? "text-slate-400" : "text-slate-500";
 
-  // ─── OUTSIDE CLICK FOR PROFILE POPUP ────────────────────────────────────────
+  // ─── Dashboard load ───────────────────────────────────────────────────────
+  const loadDashboard = useCallback(async () => {
+    try {
+      const token = localStorage.getItem("facepay_token");
+      if (!token) {
+        navigate("/login");
+        return;
+      }
+
+      const res = await fetch(`${API}/api/dashboard`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        if (res.status === 401) {
+          navigate("/login");
+          return;
+        }
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const result = await res.json();
+      if (result.success) {
+        // Only update if data actually changed to prevent render loops
+        setUser((prev) =>
+          JSON.stringify(prev) !== JSON.stringify(result.user)
+            ? result.user
+            : prev,
+        );
+        setWallet((prev) =>
+          JSON.stringify(prev) !== JSON.stringify(result.wallet)
+            ? result.wallet
+            : prev,
+        );
+        setTransactions(result.transactions || []);
+        setStats(result.stats);
+        setNotiCount(result.notifications?.unread || 0);
+      } else throw new Error(result.message);
+    } catch (err) {
+      console.error("❌ Dashboard load error:", err);
+    }
+  }, [navigate]); // Removed 'user' dependency
+
+  // ─── WebSocket for Real-time Notifications ──────────────
+  useEffect(() => {
+    if (!user?._id) return;
+    const userId = user._id;
+
+    // Connect to Backend WebSocket
+    const ws = new WebSocket(`${API.replace("http", "ws")}?userId=${userId}`);
+
+    ws.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data);
+        if (message.type === "NOTIFICATION") {
+          // Play a notification sound if available
+          try {
+            const audio = new Audio(
+              "https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3",
+            );
+            audio.play().catch(() => {});
+          } catch (e) {}
+
+          // Refresh dashboard data to show the new notification
+          loadDashboard();
+        }
+      } catch (err) {
+        console.error("WS error:", err);
+      }
+    };
+
+    return () => {
+      if (ws) ws.close();
+    };
+  }, [user?._id]); // Removed 'loadDashboard' dependency to prevent re-connects on function change
+
+  // ─── Outside click ────────────────────────────────────────────────────────
   useEffect(() => {
     const handleOutside = (e) => {
-      if (profileRef.current && !profileRef.current.contains(e.target)) {
+      if (profileRef.current && !profileRef.current.contains(e.target))
         setPopupView(null);
-      }
     };
     if (popupView) document.addEventListener("mousedown", handleOutside);
     return () => document.removeEventListener("mousedown", handleOutside);
   }, [popupView]);
 
-  // ─── REWARD CODE ─────────────────────────────────────────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      // If we are already loading or already have data, don't trigger initial load multiple times
+      if (user?._id && !loading) return;
+
+      // ⚡ OPTIMIZATION: Check if we have cached user data to show UI immediately
+      const cachedUser = localStorage.getItem("facepay_user");
+      if (cachedUser && !user) {
+        try {
+          const parsed = JSON.parse(cachedUser);
+          setUser({
+            ...parsed,
+            name: parsed.full_name || parsed.name,
+          });
+        } catch (e) {}
+      }
+
+      await loadDashboard();
+      if (!cancelled) {
+        setLoading(false);
+      }
+    };
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [loadDashboard]);
+
+  // ─── Auto-refresh (lightweight — only transactions + wallet) ──────────────
+  // ✅ FIX: Does NOT call the full dashboard endpoint every 5s
+  // Instead calls a lightweight transactions-only endpoint
+  // This avoids hammering MongoDB and bypassing Redis cache
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      const token = localStorage.getItem("facepay_token");
+      if (!token) return;
+      try {
+        const res = await fetch(`${API}/api/payment/transactions`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const result = await res.json();
+        if (result.success) {
+          setTransactions(result.transactions || []);
+
+          // Also refresh balance from a lightweight endpoint if possible
+          const balRes = await fetch(`${API}/api/payment/balance`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          const balData = await balRes.json();
+          if (balData.success && wallet) {
+            setWallet((prev) => ({ ...prev, balance: balData.balance }));
+          }
+        }
+      } catch (err) {
+        console.error("Polling error:", err);
+      }
+    }, 5000); // 5s interval for real-time experience
+    return () => clearInterval(interval);
+  }, [wallet]);
+
+  // ─── Profile update listener ──────────────────────────────────────────────
+  // ✅ FIX: Removed window.location.reload() on focus — was causing full page reloads
+  // Instead: only reload dashboard data (state update, no page refresh)
+  useEffect(() => {
+    const onStorage = (e) => {
+      if (e.key === "facepay_profile_updated") loadDashboard();
+    };
+    const onFocus = () => {
+      // ✅ FIX: Only re-fetch data, never reload the page
+      const last = localStorage.getItem("facepay_profile_last_update");
+      if (last && user?.updatedAt && last !== user.updatedAt) {
+        loadDashboard();
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [user, loadDashboard]);
+
+  // ─── Reward code ──────────────────────────────────────────────────────────
   useEffect(() => {
     try {
       if (!user) return;
@@ -393,7 +570,6 @@ function DashboardInner() {
     }
   }, [user]);
 
-  // ─── REWARD COUNTDOWN ────────────────────────────────────────────────────────
   useEffect(() => {
     if (!rewardExpiry) return;
     const interval = setInterval(() => {
@@ -414,86 +590,11 @@ function DashboardInner() {
     return () => clearInterval(interval);
   }, [rewardExpiry]);
 
-  // ─── DASHBOARD DATA LOAD ──────────────────────────────────────────────────────
-  useEffect(() => {
-    const load = async () => {
-      let timeout = setTimeout(() => setLoading(false), 1000);
-      try {
-        const token = localStorage.getItem("facepay_token");
-        if (!token) {
-          navigate("/login");
-          clearTimeout(timeout);
-          return;
-        }
-        const res = await fetch("http://localhost:5000/api/dashboard", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const result = await res.json();
-        if (result.success) {
-          setUser(result.user);
-          setWallet(result.wallet);
-          setTransactions(result.transactions || []);
-          setStats(result.stats);
-          setNotiCount(result.notifications?.unread || 0);
-        } else throw new Error(result.message);
-      } catch (err) {
-        console.error("Dashboard load error:", err);
-        setUser({ name: "User" });
-        setWallet({ balance: 0, wallet_key: "----" });
-        setTransactions([]);
-      } finally {
-        setTimeout(() => setLoading(false), 100);
-        clearTimeout(timeout);
-      }
-    };
-    load();
-  }, []);
-
-  // ─── PROFILE UPDATE LISTENER ─────────────────────────────────────────────────
-  useEffect(() => {
-    const fn = (e) => {
-      if (e.key === "facepay_profile_updated") {
-        const loadUser = async () => {
-          const token = localStorage.getItem("facepay_token");
-          const res = await fetch("http://localhost:5000/api/dashboard", {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          const result = await res.json();
-          if (result.success) setUser(result.user);
-        };
-        loadUser();
-      }
-    };
-    window.addEventListener("storage", fn);
-    return () => window.removeEventListener("storage", fn);
-  }, []);
-
-  useEffect(() => {
-    const fn = () => {
-      const last = localStorage.getItem("facepay_profile_last_update");
-      if (last && user?.updatedAt && last !== user.updatedAt)
-        window.location.reload();
-    };
-    window.addEventListener("focus", fn);
-    return () => window.removeEventListener("focus", fn);
-  }, [user]);
-
-  // ─── ADD MONEY ───────────────────────────────────────────────────────────────
+  // ─── Add money ────────────────────────────────────────────────────────────
   const handleAddMoney = async (amount) => {
     try {
-      const token = localStorage.getItem("facepay_token");
-      if (!token) {
-        alert("Session expired");
-        navigate("/login");
-        return;
-      }
-      const res = await fetch("http://localhost:5000/api/dashboard/add-money", {
+      const res = await apiFetch("/api/dashboard/add-money", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
         body: JSON.stringify({ amount, payment_method: "wallet" }),
       });
       if (!res.ok) throw new Error("Failed");
@@ -510,39 +611,14 @@ function DashboardInner() {
     }
   };
 
-  // ─── AUTO REFRESH TRANSACTIONS ────────────────────────────────────────────────
-  useEffect(() => {
-    const interval = setInterval(async () => {
-      const token = localStorage.getItem("facepay_token");
-      if (!token) return;
-      try {
-        const res = await fetch("http://localhost:5000/api/dashboard", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) return;
-        const result = await res.json();
-        if (result.success) {
-          setTransactions(result.transactions || []);
-          setWallet(result.wallet); // ✅ Wallet bhi refresh hoga
-        }
-      } catch {
-        /* ignore */
-      }
-    }, 5000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // ─── ✅ PAYMENT COMPLETE HANDLER (SendMoneyFlow ke baad) ─────────────────────
+  // ─── Payment complete ─────────────────────────────────────────────────────
   const handlePaymentComplete = (txn) => {
-    // Wallet balance update
     setWallet((prev) => ({
       ...prev,
       balance: (
         parseFloat(prev?.balance || 0) - parseFloat(txn.amount)
       ).toFixed(2),
     }));
-
-    // Transaction list mein naya txn add karo
     setTransactions((prev) => [
       {
         id: txn.txn_id || txn.id,
@@ -554,12 +630,10 @@ function DashboardInner() {
       },
       ...prev,
     ]);
-
-    // Notification count badhao
     setNotiCount((prev) => prev + 1);
   };
 
-  // ─── FILTERS ─────────────────────────────────────────────────────────────────
+  // ─── Filters ──────────────────────────────────────────────────────────────
   const filteredTransactions = useMemo(() => {
     if (filterType === "all") return transactions;
     if (filterType === "income")
@@ -572,7 +646,6 @@ function DashboardInner() {
   const getTotalInvested = () =>
     transactions.filter((t) => t.amount > 0).reduce((s, t) => s + t.amount, 0);
 
-  // ─── DOWNLOAD STATEMENT ───────────────────────────────────────────────────────
   const downloadStatement = () => {
     try {
       const csv = [
@@ -596,51 +669,225 @@ function DashboardInner() {
     }
   };
 
-  // ─── AI SUBMIT ────────────────────────────────────────────────────────────────
+  // ─── AI submit ────────────────────────────────────────────────────────────
   const handleAISubmit = async (e) => {
     e.preventDefault();
     if (!aiQuery.trim()) return;
+
+    const userMessage = { role: "user", content: aiQuery };
+    setChatHistory((prev) => [...prev, userMessage]);
+    setAiQuery("");
     setAiLoading(true);
-    setAiResponse("");
-    setAiMode(null);
+
     const q = aiQuery.toLowerCase();
     let resp =
       "I'm not sure about that. Try asking about your balance, coupons, investment, or statement.";
+    let mode = null;
+
     try {
-      const token = localStorage.getItem("facepay_token");
-      if (q.includes("spend") || q.includes("expense")) {
-        const res = await fetch("http://localhost:5000/api/dashboard", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+      if (
+        q.includes("spend") ||
+        q.includes("expense") ||
+        q.includes("summary")
+      ) {
+        const res = await apiFetch("/api/dashboard");
         const data = await res.json();
-        resp = `You spent ${formatCurrency(data?.stats?.monthlySpending || 0)} this month.`;
-      } else if (q.includes("balance")) {
-        const res = await fetch("http://localhost:5000/api/dashboard", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = await res.json();
-        resp = `Your current balance is ${formatCurrency(data?.wallet?.balance || 0)}.`;
-      } else if (q.includes("save") || q.includes("tip")) {
+        const spent = data?.stats?.monthlySpending || 0;
+        resp = `You have spent ${formatCurrency(spent)} this month so far. You're ${spent > 5000 ? "slightly over" : "well within"} your average monthly budget!`;
+      } else if (q.includes("balance") || q.includes("money")) {
+        resp = `Current account balance: ${formatCurrency(wallet?.balance || 0)}. Would you like to add more or withdraw?`;
+      } else if (q.includes("hi") || q.includes("hello") || q.includes("hey")) {
+        resp = `Hello ${getFirstName()}! I can help you analyze your spending, check your balance, or find the best deals. What's on your mind?`;
+      } else if (
+        q.includes("save") ||
+        q.includes("tip") ||
+        q.includes("budget")
+      ) {
         resp =
-          "Try setting a monthly budget and track your spending in different categories!";
-      } else if (q.includes("coupon") || q.includes("offer")) {
-        setAiMode("coupon");
-        resp = "Here are your available coupons:";
-      } else if (q.includes("invest")) {
-        setAiMode("invest");
-        resp = `You have invested a total of ${formatCurrency(getTotalInvested())}.`;
-      } else if (q.includes("statement") || q.includes("download")) {
-        setAiMode("statement");
-        resp = "You can download your transaction statement below.";
+          "Smart saving starts with tracking. I've noticed you spend most on 'General'. Try setting a 10% lower limit this month to save more!";
+      } else if (
+        q.includes("coupon") ||
+        q.includes("offer") ||
+        q.includes("deal")
+      ) {
+        mode = "coupon";
+        resp = "I've found some exciting offers for you! Check them out:";
+      } else if (q.includes("invest") || q.includes("growth")) {
+        mode = "invest";
+        resp = `Your total investment flow is ${formatCurrency(getTotalInvested())}. Investing early is the key to financial freedom!`;
+      } else if (
+        q.includes("statement") ||
+        q.includes("download") ||
+        q.includes("history")
+      ) {
+        mode = "statement";
+        resp =
+          "Sure! I can generate your transaction history for you. Click the button below to download your statement.";
+      } else if (q.includes("thank") || q.includes("bye")) {
+        resp =
+          "You're welcome! Feel free to ask whenever you need financial advice. Have a great day!";
       }
     } catch {
-      resp = "Sorry, could not fetch real-time info.";
+      resp =
+        "Apologies, I'm having trouble accessing your real-time data right now. Please try again in a moment.";
     }
-    setAiResponse(resp);
-    setAiLoading(false);
+
+    setTimeout(() => {
+      setChatHistory((prev) => [...prev, { role: "ai", content: resp, mode }]);
+      setAiLoading(false);
+    }, 600);
   };
 
-  // ─── HELPERS ──────────────────────────────────────────────────────────────────
+  // ─── SEARCH LOGIC ────────────────────────────────────────────────────────
+  const dashboardActions = useMemo(
+    () => [
+      {
+        id: "send",
+        label: "Send Money",
+        icon: <FiSend />,
+        details: "Transfer funds to friends",
+        onClick: () => navigate("/dashboard/send"),
+      },
+      {
+        id: "request",
+        label: "Request Money",
+        icon: <FiDownload />,
+        details: "Ask friends for payment",
+        onClick: () => navigate("/dashboard/request"),
+      },
+      {
+        id: "add",
+        label: "Add Money",
+        icon: <FiPlus />,
+        details: "Top up your wallet",
+        onClick: () => setShowAddMoney(true),
+      },
+      {
+        id: "withdraw",
+        label: "Withdraw",
+        icon: <FiArrowUpRight />,
+        details: "Transfer to bank/UPI",
+        onClick: () => setShowWithdraw(true),
+      },
+      {
+        id: "profile",
+        label: "My Profile",
+        icon: <FiCheckCircle />,
+        details: "Update your details",
+        onClick: () => navigate("/dashboard/profile"),
+      },
+      {
+        id: "settings",
+        label: "Settings",
+        icon: <FiSettings />,
+        details: "General preferences",
+        onClick: () => setPopupView("settings"),
+      },
+      {
+        id: "rewards",
+        label: "Rewards",
+        icon: <FiGift />,
+        details: "Current offers & coupons",
+        onClick: () => setShowRewards(true),
+      },
+      {
+        id: "ai",
+        label: "Ask AI",
+        icon: <FiMessageCircle />,
+        details: "Financial assistant",
+        onClick: () => setShowAIAssist(true),
+      },
+      {
+        id: "leaderboard",
+        label: "Leaderboard",
+        icon: <FiTrendingUp />,
+        details: "See top earners",
+        onClick: () => navigate("/dashboard/leaderboard"),
+      },
+      {
+        id: "missions",
+        label: "Active Missions",
+        icon: <FiTarget />,
+        details: "Earn coins by tasks",
+        onClick: () => navigate("/dashboard/missions"),
+      },
+      {
+        id: "support",
+        label: "Help & Support",
+        icon: <FiMessageCircle />,
+        details: "Get in touch with us",
+        onClick: () => alert("Support coming soon!"),
+      },
+    ],
+    [
+      navigate,
+      setShowAddMoney,
+      setShowWithdraw,
+      setShowRewards,
+      setShowAIAssist,
+      setPopupView,
+    ],
+  );
+
+  const searchResults = useMemo(() => {
+    const defaultCoupons = [
+      {
+        id: "wc10",
+        title: "WELCOME10",
+        description: "10% Cashback on first scan",
+      },
+      {
+        id: "fp50",
+        title: "FACEPAY50",
+        description: "Flat ₹50 off on next utility",
+      },
+    ];
+    const sourceCoupons =
+      activeCoupons && activeCoupons.length > 0
+        ? activeCoupons
+        : defaultCoupons;
+
+    if (!searchQuery.trim())
+      return {
+        actions: dashboardActions.slice(0, 4),
+        transactions: transactions.slice(0, 3),
+      };
+    const q = searchQuery.toLowerCase();
+
+    return {
+      actions: dashboardActions.filter(
+        (a) =>
+          a.label.toLowerCase().includes(q) ||
+          a.details.toLowerCase().includes(q),
+      ),
+      transactions: transactions
+        .filter(
+          (t) =>
+            t.title.toLowerCase().includes(q) ||
+            t.category.toLowerCase().includes(q) ||
+            t.amount.toString().includes(q),
+        )
+        .slice(0, 5),
+      coupons: sourceCoupons.filter(
+        (c) =>
+          c.title.toLowerCase().includes(q) ||
+          c.description.toLowerCase().includes(q),
+      ),
+    };
+  }, [searchQuery, transactions, dashboardActions]);
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setShowSearch((prev) => !prev);
+      }
+      if (e.key === "Escape") setShowSearch(false);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
   const handleLogout = () => {
     localStorage.clear();
     navigate("/login");
@@ -651,21 +898,18 @@ function DashboardInner() {
     const n = user.name || user.full_name || user.fullName;
     return n ? n.split(" ")[0] : "User";
   };
-
   const getInitial = () => {
     if (!user) return "U";
     const n = user.name || user.full_name || user.fullName;
     return n ? n.charAt(0).toUpperCase() : "U";
   };
-
   const getProfilePicture = () => {
     if (user?.profile_picture) return user.profile_picture;
     const n = user?.name || user?.full_name || "User";
     return `https://ui-avatars.com/api/?name=${encodeURIComponent(n)}&background=4f46e5&color=fff&size=200&bold=true`;
   };
 
-  // ─── LOADING ──────────────────────────────────────────────────────────────────
-  if (loading) {
+  if (loading && !isEmbed) {
     return (
       <div
         className={`min-h-screen flex items-center justify-center ${dm ? "bg-slate-900" : "bg-slate-50"}`}
@@ -682,16 +926,15 @@ function DashboardInner() {
     );
   }
 
-  // ─── RENDER ───────────────────────────────────────────────────────────────────
   return (
     <div
-      className={`min-h-screen ${bgMain} font-sans transition-colors duration-300 ${dm ? "text-slate-100" : "text-slate-800"}`}
+      className={`min-h-screen ${isEmbed ? "bg-white" : bgMain} font-sans transition-colors duration-300 ${dm ? "text-slate-100" : "text-slate-800"}`}
     >
-      <Sidebar onLogout={handleLogout} />
-
-      <main className="md:ml-72 flex flex-col px-4 sm:px-6 lg:px-8 py-6 min-h-screen transition-all duration-300 -mt-[45rem]">
-        {/* ─── TOP BAR ──────────────────────────────────────────────────────── */}
-        {isRoot && (
+      {!isEmbed && <Sidebar onLogout={handleLogout} />}
+      <main
+        className={`${isEmbed ? "ml-0" : "md:ml-72"} flex flex-col px-4 sm:px-6 lg:px-8 py-6 min-h-screen transition-all duration-300 ${isEmbed ? "" : "-mt-180"}`}
+      >
+        {isRoot && !isEmbed && (
           <motion.div
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -714,149 +957,153 @@ function DashboardInner() {
             </div>
 
             <div className="flex items-center gap-3 self-end sm:self-auto">
-              {/* Search */}
-              <div
-                className={`hidden md:flex items-center px-3 py-2 rounded-full border shadow-sm ${dm ? "bg-slate-800 border-slate-700" : "bg-white border-slate-200"}`}
-              >
-                <FiSearch className={`mr-2 ${textSecondary}`} />
-                <input
-                  type="text"
-                  placeholder={t("search")}
-                  className={`bg-transparent text-sm outline-none w-32 ${dm ? "text-slate-200 placeholder-slate-500" : "placeholder-slate-400"}`}
-                />
-              </div>
-
-              {/* Bell */}
-              <button
-                onClick={() => setShowNotifications(true)}
-                className={`relative p-2.5 rounded-full shadow-sm border transition-colors ${dm ? "bg-slate-800 border-slate-700 hover:bg-slate-700" : "bg-white border-slate-200 hover:bg-slate-50"}`}
-              >
-                <FiBell
-                  className={`text-lg ${dm ? "text-slate-400" : "text-slate-600"}`}
-                />
-                {notiCount > 0 && (
-                  <span className="absolute top-0 right-0 h-4 w-4 bg-red-500 text-white text-[10px] font-bold flex items-center justify-center rounded-full border-2 border-white">
-                    {notiCount}
-                  </span>
-                )}
-              </button>
-
-              {/* Profile */}
-              <div className="relative" ref={profileRef}>
+              {!isEmbed && (
                 <div
-                  className="w-10 h-10 rounded-full bg-gradient-to-r from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold shadow-md ring-2 ring-white cursor-pointer hover:scale-105 transition-transform overflow-hidden"
-                  onClick={() => setPopupView(popupView ? null : "profile")}
+                  className={`hidden md:flex items-center px-4 py-2.5 rounded-full border shadow-sm transition-all cursor-pointer group ${dm ? "bg-slate-800 border-slate-700 hover:bg-slate-700/80" : "bg-white border-slate-200 hover:bg-slate-50"}`}
+                  onClick={() => setShowSearch(true)}
                 >
-                  <img
-                    src={getProfilePicture()}
-                    alt={getFirstName()}
-                    className="w-full h-full object-cover"
-                    onError={(e) => {
-                      e.target.style.display = "none";
-                      e.target.parentElement.innerHTML = getInitial();
-                    }}
+                  <FiSearch
+                    className={`mr-2 transition-transform group-hover:scale-110 ${textSecondary}`}
                   />
+                  <span
+                    className={`text-sm select-none ${dm ? "text-slate-500" : "text-slate-400"}`}
+                  >
+                    {t("search")}...
+                  </span>
+                  <div
+                    className={`ml-4 px-1.5 py-0.5 rounded text-[10px] font-bold border transition-opacity ${dm ? "border-slate-600 text-slate-500" : "border-slate-200 text-slate-400 opacity-50Group-hover:opacity-100"}`}
+                  >
+                    ⌘K
+                  </div>
                 </div>
+              )}
 
-                <AnimatePresence mode="wait">
-                  {popupView === "profile" && (
-                    <motion.div
-                      key="profile"
-                      initial={{ opacity: 0, scale: 0.95, y: -10 }}
-                      animate={{ opacity: 1, scale: 1, y: 0 }}
-                      exit={{ opacity: 0, scale: 0.95, y: -10 }}
-                      transition={{ duration: 0.18 }}
-                      className={`absolute right-0 mt-2 w-64 rounded-2xl shadow-2xl border z-50 p-5 flex flex-col gap-2 ${dm ? "bg-slate-800/95 border-slate-700" : "bg-white/85 border-slate-100"}`}
-                      style={{
-                        backdropFilter: "blur(20px)",
-                        boxShadow: "0 8px 32px rgba(80,80,180,0.12)",
+              {!isEmbed && (
+                <button
+                  onClick={() => setShowNotifications(true)}
+                  className={`relative p-2.5 rounded-full shadow-sm border transition-colors ${dm ? "bg-slate-800 border-slate-700 hover:bg-slate-700" : "bg-white border-slate-200 hover:bg-slate-50"}`}
+                >
+                  <FiBell
+                    className={`text-lg ${dm ? "text-slate-400" : "text-slate-600"}`}
+                  />
+                  {notiCount > 0 && (
+                    <span className="absolute top-0 right-0 h-4 w-4 bg-red-500 text-white text-[10px] font-bold flex items-center justify-center rounded-full border-2 border-white">
+                      {notiCount}
+                    </span>
+                  )}
+                </button>
+              )}
+
+              {!isEmbed && (
+                <div className="relative" ref={profileRef}>
+                  <div
+                    className="w-10 h-10 rounded-full bg-linear-to-r from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold shadow-md ring-2 ring-white cursor-pointer hover:scale-105 transition-transform overflow-hidden"
+                    onClick={() => setPopupView(popupView ? null : "profile")}
+                  >
+                    <img
+                      src={getProfilePicture()}
+                      alt={getFirstName()}
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        e.target.style.display = "none";
+                        e.target.parentElement.innerHTML = getInitial();
                       }}
-                    >
-                      <div className="flex flex-col items-center gap-2 mb-2">
-                        {user?.profile_picture ? (
-                          <img
-                            src={user.profile_picture}
-                            alt={user?.name}
-                            className="w-16 h-16 rounded-full border-4 border-indigo-200 object-cover shadow"
-                          />
-                        ) : (
-                          <div className="w-16 h-16 rounded-full border-4 border-indigo-200 bg-gradient-to-r from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-2xl shadow">
-                            {getInitial()}
+                    />
+                  </div>
+
+                  <AnimatePresence mode="wait">
+                    {popupView === "profile" && (
+                      <motion.div
+                        key="profile"
+                        initial={{ opacity: 0, scale: 0.95, y: -10 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.95, y: -10 }}
+                        transition={{ duration: 0.18 }}
+                        className={`absolute right-0 mt-2 w-64 rounded-2xl shadow-2xl border z-50 p-5 flex flex-col gap-2 ${dm ? "bg-slate-800/95 border-slate-700" : "bg-white/85 border-slate-100"}`}
+                        style={{ backdropFilter: "blur(20px)" }}
+                      >
+                        <div className="flex flex-col items-center gap-2 mb-2">
+                          {user?.profile_picture ? (
+                            <img
+                              src={user.profile_picture}
+                              alt={user?.name}
+                              className="w-16 h-16 rounded-full border-4 border-indigo-200 object-cover shadow"
+                            />
+                          ) : (
+                            <div className="w-16 h-16 rounded-full border-4 border-indigo-200 bg-linear-to-r from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-2xl shadow">
+                              {getInitial()}
+                            </div>
+                          )}
+                          <div className="text-center">
+                            <div
+                              className={`font-bold text-base ${textPrimary}`}
+                            >
+                              {user?.name || user?.full_name || "User"}
+                            </div>
+                            <div className={`text-xs ${textSecondary}`}>
+                              {user?.email || ""}
+                            </div>
                           </div>
-                        )}
-                        <div className="text-center">
-                          <div className={`font-bold text-base ${textPrimary}`}>
-                            {user?.name || user?.full_name || "User"}
-                          </div>
-                          <div className={`text-xs ${textSecondary}`}>
-                            {user?.email || ""}
-                          </div>
+                          <button
+                            className="text-xs text-indigo-500 font-semibold mt-1 hover:underline"
+                            onClick={() => {
+                              setPopupView(null);
+                              setTimeout(
+                                () => navigate("/dashboard/profile"),
+                                100,
+                              );
+                            }}
+                          >
+                            {t("viewProfile")}
+                          </button>
                         </div>
+                        <div
+                          className={`border-t my-1 ${dm ? "border-slate-700" : "border-slate-100"}`}
+                        />
                         <button
-                          className="text-xs text-indigo-500 font-semibold mt-1 hover:underline"
-                          onClick={() => {
-                            setPopupView(null);
-                            setTimeout(
-                              () => navigate("/dashboard/profile"),
-                              100,
-                            );
+                          className={`w-full flex items-center gap-2 text-left px-3 py-2 rounded-lg font-medium text-sm transition-colors ${dm ? "hover:bg-slate-700 text-slate-300" : "hover:bg-indigo-50 text-slate-700"}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPopupView("settings");
                           }}
                         >
-                          {t("viewProfile")}
+                          <FiSettings className="text-indigo-400" />{" "}
+                          {t("dashboardSettings")}
+                          <span
+                            className={`ml-auto text-xs ${dm ? "text-slate-600" : "text-slate-300"}`}
+                          >
+                            ›
+                          </span>
                         </button>
-                      </div>
-
-                      <div
-                        className={`border-t my-1 ${dm ? "border-slate-700" : "border-slate-100"}`}
-                      />
-
-                      <button
-                        className={`w-full flex items-center gap-2 text-left px-3 py-2 rounded-lg font-medium text-sm transition-colors ${dm ? "hover:bg-slate-700 text-slate-300" : "hover:bg-indigo-50 text-slate-700"}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setPopupView("settings");
-                        }}
-                      >
-                        <FiSettings className="text-indigo-400" />
-                        {t("dashboardSettings")}
-                        <span
-                          className={`ml-auto text-xs ${dm ? "text-slate-600" : "text-slate-300"}`}
+                        <button
+                          className={`w-full flex items-center gap-2 text-left px-3 py-2 rounded-lg font-medium text-sm transition-colors ${dm ? "hover:bg-red-900/30 text-red-400" : "hover:bg-red-50 text-red-600"}`}
+                          onClick={handleLogout}
                         >
-                          ›
-                        </span>
-                      </button>
-
-                      <button
-                        className={`w-full flex items-center gap-2 text-left px-3 py-2 rounded-lg font-medium text-sm transition-colors ${dm ? "hover:bg-red-900/30 text-red-400" : "hover:bg-red-50 text-red-600"}`}
-                        onClick={handleLogout}
-                      >
-                        <FiLogOut className="text-red-400" /> {t("logout")}
-                      </button>
-                    </motion.div>
-                  )}
-
-                  {popupView === "settings" && (
-                    <SettingsPopup
-                      onBack={() => setPopupView("profile")}
-                      onClose={() => setPopupView(null)}
-                    />
-                  )}
-                </AnimatePresence>
-              </div>
+                          <FiLogOut className="text-red-400" /> {t("logout")}
+                        </button>
+                      </motion.div>
+                    )}
+                    {popupView === "settings" && !isEmbed && (
+                      <SettingsPopup
+                        onBack={() => setPopupView("profile")}
+                        onClose={() => setPopupView(null)}
+                      />
+                    )}
+                  </AnimatePresence>
+                </div>
+              )}
             </div>
           </motion.div>
         )}
 
-        {/* ─── MAIN CONTENT ─────────────────────────────────────────────────── */}
         {isRoot && (
           <div className="space-y-6 max-w-7xl mx-auto w-full">
-            {/* Wallet Card + Rewards/AI */}
+            {/* Wallet + Rewards */}
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               className="grid grid-cols-1 lg:grid-cols-3 gap-6"
             >
-              {/* Wallet Card */}
               <div
                 className="lg:col-span-2 rounded-3xl p-6 md:p-8 relative overflow-hidden shadow-xl"
                 style={{
@@ -891,16 +1138,23 @@ function DashboardInner() {
                       </div>
                     </div>
                     <div className="bg-white/10 backdrop-blur-md px-3 py-1 rounded-lg border border-white/10 flex items-center gap-2">
-                      <FiCheckCircle
-                        className={
-                          user?.kyc_verified
-                            ? "text-green-400"
-                            : "text-yellow-400"
-                        }
-                      />
-                      <span className="text-xs font-semibold">
-                        {user?.kyc_verified ? t("verified") : t("unverified")}
-                      </span>
+                      {user?.kyc_verified ||
+                      user?.is_verified ||
+                      user?.kyc_status === "verified" ? (
+                        <>
+                          <FiCheckCircle className="text-green-400" />
+                          <span className="text-xs font-semibold text-green-300">
+                            KYC VERIFIED
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <FiAlertCircle className="text-yellow-400" />
+                          <span className="text-xs font-semibold">
+                            UNVERIFIED
+                          </span>
+                        </>
+                      )}
                     </div>
                   </div>
                   <div className="flex flex-col sm:flex-row items-end sm:items-center justify-between gap-4">
@@ -917,15 +1171,13 @@ function DashboardInner() {
                 </div>
               </div>
 
-              {/* Rewards + AI */}
               <div className="grid grid-rows-2 gap-4">
                 <motion.div
                   whileHover={{ y: -2 }}
                   onClick={() => setShowRewards(true)}
                   className={`rounded-3xl p-5 cursor-pointer flex flex-col justify-center relative overflow-hidden shadow-sm hover:shadow-md transition-all border ${cardBg}`}
                 >
-                  <div className="absolute right-0 top-0 w-24 h-24 bg-purple-100 rounded-full -mr-4 -mt-4 opacity-20" />
-                  <div className="flex items-center gap-3 relative z-10">
+                  <div className="flex items-center gap-3">
                     <div
                       className={`p-3 rounded-xl ${dm ? "bg-purple-900/40 text-purple-400" : "bg-purple-100 text-purple-600"}`}
                     >
@@ -941,14 +1193,12 @@ function DashboardInner() {
                     </div>
                   </div>
                 </motion.div>
-
                 <motion.div
                   whileHover={{ y: -2 }}
                   onClick={() => setShowAIAssist(true)}
                   className={`rounded-3xl p-5 cursor-pointer flex flex-col justify-center relative overflow-hidden shadow-sm hover:shadow-md transition-all border ${cardBg}`}
                 >
-                  <div className="absolute right-0 bottom-0 w-24 h-24 bg-blue-50 rounded-full -mr-4 -mb-4 opacity-20" />
-                  <div className="flex items-center gap-3 relative z-10">
+                  <div className="flex items-center gap-3">
                     <div
                       className={`p-3 rounded-xl ${dm ? "bg-blue-900/40 text-blue-400" : "bg-blue-100 text-blue-600"}`}
                     >
@@ -967,7 +1217,7 @@ function DashboardInner() {
               </div>
             </motion.div>
 
-            {/* ─── QUICK ACTIONS ─────────────────────────────────────────────── */}
+            {/* Quick Actions */}
             <section>
               <h3
                 className={`text-sm font-bold uppercase tracking-wider mb-4 ml-1 ${textSecondary}`}
@@ -975,41 +1225,33 @@ function DashboardInner() {
                 {t("quickActions")}
               </h3>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                {/* ✅ SEND — SendMoneyFlow connected */}
                 <SendMoneyFlow
                   darkMode={darkMode}
                   walletBalance={parseFloat(wallet?.balance || 0)}
                   onPaymentComplete={handlePaymentComplete}
                   delay={0.1}
                 />
-
-                {/* Request */}
-                <ActionButton
-                  icon={<FiPocket />}
-                  label={t("request")}
+                <RequestMoneyFlow
+                  darkMode={darkMode}
                   delay={0.2}
-                  onClick={() => {}} // aap apna request handler laga sakte ho
+                  onComplete={() => {}}
                 />
-
-                {/* Withdraw */}
                 <ActionButton
                   icon={<FiDownload />}
                   label={t("withdraw")}
                   delay={0.3}
-                  onClick={() => {}} // aap apna withdraw handler laga sakte ho
+                  onClick={() => setShowWithdraw(true)}
                 />
-
-                {/* Scan QR */}
                 <ActionButton
                   icon={<FiCamera />}
                   label={t("scanQr")}
                   delay={0.4}
-                  onClick={() => {}} // aap apna QR handler laga sakte ho
+                  onClick={() => {}}
                 />
               </div>
             </section>
 
-            {/* ─── RECENT ACTIVITY ───────────────────────────────────────────── */}
+            {/* Recent Activity */}
             <section className={`rounded-3xl p-6 shadow-sm border ${cardBg}`}>
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                 <h3
@@ -1054,23 +1296,11 @@ function DashboardInner() {
                       animate={{ opacity: 1, x: 0 }}
                       exit={{ opacity: 0 }}
                       transition={{ delay: idx * 0.05 }}
-                      className={`group flex items-center justify-between p-4 rounded-xl transition-colors border border-transparent cursor-pointer ${
-                        dm
-                          ? "hover:bg-slate-700/50 hover:border-slate-600"
-                          : "hover:bg-indigo-50/50 hover:border-indigo-100"
-                      }`}
+                      className={`group flex items-center justify-between p-4 rounded-xl transition-colors border border-transparent cursor-pointer ${dm ? "hover:bg-slate-700/50 hover:border-slate-600" : "hover:bg-indigo-50/50 hover:border-indigo-100"}`}
                     >
                       <div className="flex items-center gap-4">
                         <div
-                          className={`w-10 h-10 rounded-full flex items-center justify-center text-lg ${
-                            txn.amount > 0
-                              ? dm
-                                ? "bg-green-900/40 text-green-400"
-                                : "bg-green-100 text-green-600"
-                              : dm
-                                ? "bg-slate-700 text-slate-400"
-                                : "bg-slate-100 text-slate-600"
-                          }`}
+                          className={`w-10 h-10 rounded-full flex items-center justify-center text-lg ${txn.amount > 0 ? (dm ? "bg-green-900/40 text-green-400" : "bg-green-100 text-green-600") : dm ? "bg-slate-700 text-slate-400" : "bg-slate-100 text-slate-600"}`}
                         >
                           {txn.amount > 0 ? (
                             <FiArrowDownLeft />
@@ -1080,7 +1310,7 @@ function DashboardInner() {
                         </div>
                         <div>
                           <h4
-                            className={`font-bold text-sm transition-colors ${dm ? "text-slate-200 group-hover:text-indigo-400" : "text-slate-900 group-hover:text-indigo-700"}`}
+                            className={`font-bold text-sm ${dm ? "text-slate-200 group-hover:text-indigo-400" : "text-slate-900 group-hover:text-indigo-700"}`}
                           >
                             {txn.title}
                           </h4>
@@ -1111,7 +1341,6 @@ function DashboardInner() {
                     </motion.div>
                   ))}
                 </AnimatePresence>
-
                 {filteredTransactions.length === 0 && (
                   <div className={`py-10 text-center text-sm ${textSecondary}`}>
                     {transactions.length === 0
@@ -1133,251 +1362,633 @@ function DashboardInner() {
           </div>
         )}
 
-        {/* ─── AI ASSIST MODAL ───────────────────────────────────────────────── */}
+        {/* AI Assist Modal */}
         <AnimatePresence>
-          {showAIAssist && (
+          {showAIAssist && !isEmbed && (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+              className="fixed inset-0 z-50 flex items-center justify-end p-0 sm:p-6 bg-black/40 backdrop-blur-sm"
               onClick={() => setShowAIAssist(false)}
             >
               <motion.div
-                initial={{ scale: 0.9, opacity: 0, y: 20 }}
-                animate={{ scale: 1, opacity: 1, y: 0 }}
-                exit={{ scale: 0.9, opacity: 0, y: 20 }}
+                initial={{ x: 300, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                exit={{ x: 300, opacity: 0 }}
                 onClick={(e) => e.stopPropagation()}
-                className={`w-full max-w-md rounded-3xl shadow-2xl p-6 relative overflow-hidden ${dm ? "bg-slate-800" : "bg-white"}`}
+                className={`w-full max-w-md h-full sm:h-[85vh] rounded-none sm:rounded-[32px] shadow-2xl flex flex-col relative overflow-hidden transition-all duration-300 ${dm ? "bg-slate-900 border-l border-white/10" : "bg-white border text-slate-900"}`}
               >
-                <button
-                  onClick={() => setShowAIAssist(false)}
-                  className={`absolute right-5 top-5 ${dm ? "text-slate-500 hover:text-slate-200" : "text-slate-400 hover:text-slate-800"}`}
+                {/* Header */}
+                <div
+                  className={`p-5 border-b flex items-center justify-between ${dm ? "border-white/10 bg-slate-800/50" : "border-slate-100 bg-slate-50/50"}`}
                 >
-                  <FiX size={20} />
-                </button>
-                <div className="text-center mb-6">
-                  <div className="w-16 h-16 bg-gradient-to-tr from-blue-500 to-indigo-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg">
-                    <span className="text-3xl">🤖</span>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-gradient-to-tr from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center shadow-lg transform rotate-3">
+                      <span className="text-xl">🤖</span>
+                    </div>
+                    <div>
+                      <h2
+                        className={`text-lg font-bold leading-tight ${textPrimary}`}
+                      >
+                        Finance Assistant
+                      </h2>
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                        <span
+                          className={`text-[11px] font-medium tracking-wide uppercase opacity-70 ${textSecondary}`}
+                        >
+                          Always active
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                  <h2 className={`text-xl font-bold ${textPrimary}`}>
-                    AI Financial Assistant
-                  </h2>
-                  <p className={`text-sm mt-1 ${textSecondary}`}>
-                    Ask about expenses, savings, or tips!
-                  </p>
+                  <button
+                    onClick={() => setShowAIAssist(false)}
+                    className={`p-2 rounded-xl transition-all ${dm ? "hover:bg-white/10 text-slate-400" : "hover:bg-black/5 text-slate-400"}`}
+                  >
+                    <FiX size={20} />
+                  </button>
                 </div>
 
-                <div
-                  className={`rounded-2xl p-4 min-h-[100px] flex flex-col items-center justify-center text-center text-sm border mb-4 ${dm ? "bg-slate-700/50 border-slate-600" : "bg-slate-50 border-slate-100"}`}
-                >
-                  {aiLoading ? (
-                    <div className="flex gap-1">
-                      {[0, 1, 2].map((i) => (
-                        <span
-                          key={i}
-                          className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce"
-                          style={{ animationDelay: `${i * 100}ms` }}
-                        />
-                      ))}
-                    </div>
-                  ) : aiResponse ? (
-                    <>
-                      <span className="font-medium text-indigo-400 leading-relaxed mb-2 block">
-                        {aiResponse}
-                      </span>
-                      {aiMode === "coupon" && (
-                        <div className="w-full flex flex-col gap-2 mt-2">
-                          {activeCoupons.map((c) => (
-                            <div
-                              key={c.id}
-                              className={`flex items-center justify-between rounded-lg px-3 py-2 border ${dm ? "bg-indigo-900/30 border-indigo-800" : "bg-indigo-50 border-indigo-200"}`}
-                            >
-                              <div className="flex flex-col items-start">
-                                <span className="font-bold text-indigo-400 text-xs flex items-center gap-1">
-                                  <FiTag /> {c.brand}{" "}
-                                  <span className="ml-2 font-mono">
+                {/* Chat History */}
+                <div className="flex-1 overflow-y-auto px-5 py-6 space-y-5 custom-scrollbar bg-transparent">
+                  {chatHistory.map((chat, idx) => (
+                    <motion.div
+                      key={idx}
+                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      className={`flex ${chat.role === "user" ? "justify-end" : "justify-start"}`}
+                    >
+                      <div
+                        className={`max-w-[85%] px-4 py-3 rounded-2xl text-sm leading-relaxed shadow-sm ${
+                          chat.role === "user"
+                            ? "bg-indigo-600 text-white rounded-tr-none"
+                            : dm
+                              ? "bg-slate-800 border border-white/5 text-slate-200 rounded-tl-none"
+                              : "bg-slate-100 border border-slate-200 text-slate-700 rounded-tl-none"
+                        }`}
+                      >
+                        {chat.content}
+
+                        {chat.mode === "coupon" && (
+                          <div className="w-full flex flex-col gap-2 mt-4">
+                            {activeCoupons.map((c) => (
+                              <motion.div
+                                key={c.id}
+                                whileHover={{ scale: 1.02, x: 2 }}
+                                className={`flex items-center justify-between rounded-xl px-4 py-3 border transition-all ${dm ? "bg-indigo-950/40 border-indigo-500/20" : "bg-white border-indigo-100"}`}
+                              >
+                                <div className="flex flex-col items-start gap-1">
+                                  <span className="font-bold text-indigo-400 text-xs flex items-center gap-1.5 uppercase tracking-wider">
+                                    <FiTag size={12} /> {c.brand}
+                                  </span>
+                                  <span
+                                    className={`text-[11px] font-bold ${dm ? "text-slate-300" : "text-slate-900"}`}
+                                  >
                                     {c.code}
                                   </span>
-                                </span>
-                                <span className={`text-xs ${textSecondary}`}>
-                                  {c.desc}
-                                </span>
-                              </div>
-                              <span
-                                className={`text-xs flex items-center gap-1 ${textSecondary}`}
-                              >
-                                <FiClock /> {c.expiry}
-                              </span>
-                            </div>
+                                </div>
+                                <div className="text-right">
+                                  <span
+                                    className={`text-[10px] block opacity-70 uppercase font-bold ${textSecondary}`}
+                                  >
+                                    Offer
+                                  </span>
+                                  <span
+                                    className={`text-[11px] font-bold text-green-500`}
+                                  >
+                                    {c.desc}
+                                  </span>
+                                </div>
+                              </motion.div>
+                            ))}
+                          </div>
+                        )}
+
+                        {chat.mode === "statement" && (
+                          <button
+                            onClick={downloadStatement}
+                            className="mt-4 w-full py-2.5 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl font-bold text-xs hover:shadow-lg hover:shadow-indigo-500/20 flex items-center justify-center gap-2 transition-all active:scale-95"
+                          >
+                            <FiDownload /> Download History (CSV)
+                          </button>
+                        )}
+                      </div>
+                    </motion.div>
+                  ))}
+                  {aiLoading && (
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="flex justify-start"
+                    >
+                      <div
+                        className={`px-4 py-3 rounded-2xl rounded-tl-none border ${dm ? "bg-slate-800 border-white/5" : "bg-slate-100 border-slate-200"}`}
+                      >
+                        <div className="flex gap-1.5">
+                          {[0, 1, 2].map((i) => (
+                            <span
+                              key={i}
+                              className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce"
+                              style={{ animationDelay: `${i * 150}ms` }}
+                            />
                           ))}
                         </div>
-                      )}
-                      {aiMode === "invest" && (
-                        <div className={`mt-2 text-xs ${textSecondary}`}>
-                          (Includes all money added to wallet)
-                        </div>
-                      )}
-                      {aiMode === "statement" && (
-                        <button
-                          onClick={downloadStatement}
-                          className="mt-3 px-4 py-2 bg-indigo-600 text-white rounded-lg font-bold text-xs hover:bg-indigo-700 flex items-center gap-2"
-                        >
-                          <FiDownload /> Download CSV
-                        </button>
-                      )}
-                    </>
-                  ) : (
-                    <span className={`italic ${textSecondary}`}>
-                      "How much did I spend this month?"
-                    </span>
+                      </div>
+                    </motion.div>
                   )}
+                  <div ref={chatEndRef} className="h-2" />
                 </div>
 
-                <form onSubmit={handleAISubmit} className="relative mb-2">
-                  <input
-                    type="text"
-                    placeholder="Type your question..."
-                    className={`w-full rounded-xl px-4 py-3.5 pr-12 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all border ${dm ? "bg-slate-700 border-slate-600 text-slate-200 placeholder-slate-500" : "bg-slate-100 border-slate-200"}`}
-                    value={aiQuery}
-                    onChange={(e) => setAiQuery(e.target.value)}
-                  />
-                  <button
-                    type="submit"
-                    disabled={!aiQuery.trim() || aiLoading}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-                  >
-                    <FiArrowUpRight />
-                  </button>
-                </form>
-
-                <div className="flex flex-wrap gap-2 justify-center mt-1">
-                  {[
-                    { label: "Show my coupons", q: "Show my coupons" },
-                    {
-                      label: "How much did I invest?",
-                      q: "How much did I invest?",
-                    },
-                    { label: "Download statement", q: "Download my statement" },
-                    {
-                      label: "This month's spending",
-                      q: "How much did I spend this month?",
-                    },
-                    { label: "Show my balance", q: "Show my balance" },
-                  ].map((s, i) => (
+                {/* Input Area */}
+                <div
+                  className={`p-5 border-t ${dm ? "border-white/10 bg-slate-800/30" : "border-slate-100 bg-slate-50/50"}`}
+                >
+                  <form onSubmit={handleAISubmit} className="relative group">
+                    <input
+                      type="text"
+                      placeholder="Ask about spending, tips or savings..."
+                      className={`w-full rounded-2xl px-5 py-4 pr-14 text-[13px] font-medium focus:outline-none transition-all border ${
+                        dm
+                          ? "bg-slate-950 border-white/10 text-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 placeholder-slate-600"
+                          : "bg-white border-slate-200 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
+                      }`}
+                      value={aiQuery}
+                      onChange={(e) => setAiQuery(e.target.value)}
+                    />
                     <button
-                      key={i}
-                      type="button"
-                      className={`rounded-full px-3 py-1 text-xs font-medium transition-colors border ${dm ? "bg-slate-700 border-slate-600 text-slate-400 hover:text-indigo-400" : "bg-slate-100 border-slate-200 text-slate-600 hover:bg-indigo-50 hover:text-indigo-700"}`}
-                      onClick={() => setAiQuery(s.q)}
+                      type="submit"
+                      disabled={aiLoading || !aiQuery.trim()}
+                      className={`absolute right-2 top-2 bottom-2 aspect-square flex items-center justify-center rounded-xl transition-all ${
+                        aiQuery.trim()
+                          ? "bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-600/20"
+                          : dm
+                            ? "bg-slate-800 text-slate-600"
+                            : "bg-slate-100 text-slate-400"
+                      }`}
                     >
-                      {s.label}
+                      <FiSend />
                     </button>
-                  ))}
+                  </form>
+                  <div className="mt-3 flex gap-2 overflow-x-auto pb-2 custom-scrollbar flex-nowrap">
+                    {["Balance?", "Spending?", "Offers?", "Tips?"].map((q) => (
+                      <button
+                        key={q}
+                        onClick={() => {
+                          setAiQuery(q);
+                        }}
+                        className={`whitespace-nowrap px-3 py-1.5 rounded-full border text-[10px] font-bold uppercase tracking-wider transition-all ${
+                          dm
+                            ? "bg-slate-800 border-white/10 text-slate-400 hover:border-indigo-500 hover:text-indigo-400"
+                            : "bg-white border-slate-200 text-slate-500 hover:border-indigo-500 hover:text-indigo-500"
+                        }`}
+                      >
+                        {q}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </motion.div>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* ─── REWARDS MODAL ─────────────────────────────────────────────────── */}
+        {/* Rewards Modal */}
         <AnimatePresence>
           {showRewards && (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-md"
               onClick={() => setShowRewards(false)}
             >
               <motion.div
-                initial={{ scale: 0.9 }}
-                animate={{ scale: 1 }}
-                exit={{ scale: 0.9 }}
-                className={`w-full max-w-sm rounded-3xl p-6 text-center relative ${dm ? "bg-slate-800" : "bg-white"}`}
+                initial={{ scale: 0.8, opacity: 0, rotate: -5 }}
+                animate={{ scale: 1, opacity: 1, rotate: 0 }}
+                exit={{ scale: 0.8, opacity: 0, rotate: 5 }}
+                className={`w-full max-w-sm rounded-[40px] p-8 text-center relative overflow-hidden shadow-[0_20px_50px_rgba(79,70,229,0.3)] border ${
+                  dm
+                    ? "bg-slate-900 border-white/10"
+                    : "bg-white border-slate-100"
+                }`}
                 onClick={(e) => e.stopPropagation()}
               >
+                {/* Decorative Background Elements */}
+                <div className="absolute -top-24 -right-24 w-48 h-48 bg-purple-500/10 rounded-full blur-3xl" />
+                <div className="absolute -bottom-24 -left-24 w-48 h-48 bg-indigo-500/10 rounded-full blur-3xl" />
+
                 <button
                   onClick={() => setShowRewards(false)}
-                  className={`absolute right-4 top-4 ${dm ? "text-slate-500 hover:text-slate-200" : "text-slate-400 hover:text-slate-800"}`}
+                  className={`absolute right-6 top-6 p-2 rounded-full transition-all ${
+                    dm
+                      ? "hover:bg-white/10 text-slate-500"
+                      : "hover:bg-slate-100 text-slate-400"
+                  }`}
                 >
                   <FiX size={20} />
                 </button>
-                <div className="w-20 h-20 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center mx-auto mb-4 text-4xl">
-                  🎁
+
+                <div className="relative mb-6">
+                  <motion.div
+                    animate={{
+                      scale: [1, 1.1, 1],
+                      rotate: [0, 10, -10, 0],
+                    }}
+                    transition={{
+                      duration: 4,
+                      repeat: Infinity,
+                      ease: "easeInOut",
+                    }}
+                    className="w-24 h-24 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-3xl flex items-center justify-center mx-auto text-5xl shadow-2xl transform rotate-6 border-4 border-white/20"
+                  >
+                    🎁
+                  </motion.div>
+                  {/* Floating sparkles */}
+                  {[...Array(5)].map((_, i) => (
+                    <motion.div
+                      key={i}
+                      initial={{ opacity: 0, y: 0 }}
+                      animate={{ opacity: [0, 1, 0], y: -40, x: (i - 2) * 20 }}
+                      transition={{
+                        duration: 2,
+                        repeat: Infinity,
+                        delay: i * 0.4,
+                      }}
+                      className="absolute top-0 left-1/2 text-yellow-400 text-xl pointer-events-none"
+                    >
+                      ✨
+                    </motion.div>
+                  ))}
                 </div>
-                <h2 className={`text-xl font-bold mb-2 ${textPrimary}`}>
-                  {rewardCode ? "Your Welcome Reward Code" : "Welcome Offer!"}
+
+                <h2
+                  className={`text-2xl font-black mb-3 tracking-tight ${textPrimary}`}
+                >
+                  {rewardCode ? "Exclusive Reward!" : "Unlock Rewards"}
                 </h2>
+
                 {rewardCode ? (
-                  <>
-                    <div className="text-2xl font-mono font-bold text-purple-500 mb-2 tracking-widest select-all">
-                      {rewardCode}
+                  <div className="space-y-6">
+                    <p
+                      className={`text-sm leading-relaxed px-4 ${textSecondary}`}
+                    >
+                      High-five! You've unlocked a special welcome bonus. Copy
+                      the code below to claim it.
+                    </p>
+
+                    <div className="relative group">
+                      <div
+                        className={`py-5 px-6 rounded-2xl font-mono text-2xl font-black tracking-[0.3em] border-2 border-dashed transition-all ${
+                          dm
+                            ? "bg-slate-950/50 border-purple-500/50 text-purple-400"
+                            : "bg-purple-50 border-purple-200 text-purple-600"
+                        }`}
+                      >
+                        {rewardCode}
+                      </div>
+                      <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 bg-purple-600 text-white text-[10px] font-bold rounded-full uppercase tracking-widest shadow-lg">
+                        Promo Code
+                      </div>
                     </div>
-                    <div className={`text-xs mb-4 ${textSecondary}`}>
-                      Expires in:{" "}
-                      <span className="font-semibold text-indigo-500">
-                        {rewardCountdown}
+
+                    <div className="flex items-center justify-center gap-2">
+                      <FiClock className="text-amber-500" />
+                      <span
+                        className={`text-xs font-bold uppercase tracking-widest ${dm ? "text-slate-400" : "text-slate-500"}`}
+                      >
+                        Expires:{" "}
+                        <span className="text-amber-500">
+                          {rewardCountdown}
+                        </span>
                       </span>
                     </div>
-                    <p className={`text-sm mb-6 ${textSecondary}`}>
-                      Use this code within 24 hours to get your new user bonus!
-                    </p>
-                  </>
+
+                    <button
+                      onClick={async () => {
+                        await navigator.clipboard.writeText(rewardCode);
+                        setRewardCopied(true);
+                        setTimeout(() => setRewardCopied(false), 2000);
+                      }}
+                      className={`w-full py-4 rounded-2xl font-black text-sm uppercase tracking-wider transition-all shadow-xl group ${
+                        rewardCopied
+                          ? "bg-green-500 text-white"
+                          : "bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white hover:-translate-y-1 active:scale-95 shadow-purple-500/25"
+                      }`}
+                    >
+                      <span className="flex items-center justify-center gap-2">
+                        {rewardCopied ? <FiCheck size={18} /> : <span>📋</span>}
+                        {rewardCopied ? "Copied to Clipboard!" : "Copy & Claim"}
+                      </span>
+                    </button>
+                  </div>
                 ) : (
-                  <p className={`text-sm mb-6 ${textSecondary}`}>
-                    {rewardCountdown === "Expired"
-                      ? "This reward code has expired."
-                      : "Complete your first transaction to unlock exclusive rewards and cashback offers."}
-                  </p>
+                  <div className="space-y-6">
+                    <p className={`text-sm leading-relaxed ${textSecondary}`}>
+                      {rewardCountdown === "Expired"
+                        ? "Oh no! Your welcome code has expired. But don't worry, more rewards are coming soon!"
+                        : "Ready for your first bonus? Finish setting up your account and make your first payment to unlock 10% cashback!"}
+                    </p>
+
+                    <div
+                      className={`p-4 rounded-2xl border ${dm ? "bg-slate-800/50 border-white/5" : "bg-slate-50 border-slate-100"}`}
+                    >
+                      <div className="flex items-center gap-4 text-left">
+                        <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-500 flex items-center justify-center shrink-0">
+                          <FiGift size={20} />
+                        </div>
+                        <div>
+                          <p className={`text-xs font-bold ${textPrimary}`}>
+                            Upcoming Mission
+                          </p>
+                          <p className="text-[11px] opacity-70">
+                            Pay 3 times using FaceScan
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => setShowRewards(false)}
+                      className={`w-full py-4 rounded-2xl font-black text-sm uppercase tracking-wider transition-all border-2 ${
+                        dm
+                          ? "border-white/10 hover:bg-white/5 text-slate-300"
+                          : "border-slate-200 hover:bg-slate-50 text-slate-600"
+                      }`}
+                    >
+                      Got it
+                    </button>
+                  </div>
                 )}
-                <button
-                  onClick={async () => {
-                    if (rewardCode) {
-                      await navigator.clipboard.writeText(rewardCode);
-                      setRewardCopied(true);
-                      setTimeout(() => setRewardCopied(false), 1500);
-                    } else setShowRewards(false);
-                  }}
-                  className={`w-full py-3 rounded-xl font-bold transition-colors ${rewardCopied ? "bg-green-500 text-white" : "bg-purple-600 hover:bg-purple-700 text-white"}`}
-                  disabled={!rewardCode}
-                >
-                  {rewardCopied
-                    ? "Copied!"
-                    : rewardCode
-                      ? "Copy Code"
-                      : "Explore Offers"}
-                </button>
               </motion.div>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* ─── ADD MONEY MODAL ───────────────────────────────────────────────── */}
-        <AddMoneyModal
-          open={showAddMoney}
-          onClose={() => setShowAddMoney(false)}
-          onAdd={handleAddMoney}
-        />
+        {/* Global Search Modal */}
+        <AnimatePresence>
+          {showSearch && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[200] flex items-start justify-center pt-24 px-4 bg-slate-950/40 backdrop-blur-md"
+              onClick={() => setShowSearch(false)}
+            >
+              <motion.div
+                initial={{ scale: 0.95, y: -20, opacity: 0 }}
+                animate={{ scale: 1, y: 0, opacity: 1 }}
+                exit={{ scale: 0.95, y: -20, opacity: 0 }}
+                className={`w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden border ${dm ? "bg-slate-900 border-white/10" : "bg-white border-slate-200"}`}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div
+                  className={`flex items-center gap-4 px-6 py-5 border-b sticky top-0 z-10 ${dm ? "bg-slate-900 border-white/5" : "bg-white border-slate-100"}`}
+                >
+                  <FiSearch
+                    className={`text-xl ${dm ? "text-indigo-400" : "text-indigo-600"}`}
+                  />
+                  <input
+                    autoFocus
+                    type="text"
+                    placeholder="Search anything... (Send, Rewards, Transactions)"
+                    className={`flex-1 bg-transparent text-lg font-medium outline-none border-none placeholder-slate-500 ${dm ? "text-slate-100" : "text-slate-800"}`}
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`px-2 py-0.5 rounded text-[10px] uppercase font-black border ${dm ? "bg-slate-800 border-slate-700 text-slate-500" : "bg-slate-100 border-slate-200 text-slate-400"}`}
+                    >
+                      esc
+                    </span>
+                    <button
+                      onClick={() => setShowSearch(false)}
+                      className={`p-1.5 rounded-full hover:bg-slate-200/50 transition-colors ${dm ? "text-slate-500" : "text-slate-400"}`}
+                    >
+                      <FiX size={18} />
+                    </button>
+                  </div>
+                </div>
 
-        {/* ─── NOTIFICATIONS SIDEBAR ─────────────────────────────────────────── */}
-        <NotificationSidebar
-          isOpen={showNotifications}
-          onClose={() => {
-            setShowNotifications(false);
-            const token = localStorage.getItem("facepay_token");
-            fetch("http://localhost:5000/api/dashboard/notifications", {
-              headers: { Authorization: `Bearer ${token}` },
-            })
-              .then((r) => r.json())
-              .then((d) => {
-                if (d.success) setNotiCount(d.unread || 0);
-              })
-              .catch(() => {});
-          }}
-        />
+                <div className="max-h-[60vh] overflow-y-auto p-4 custom-scrollbar">
+                  {/* Results Section */}
+                  <div className="space-y-6">
+                    {/* Quick Actions */}
+                    {searchResults.actions.length > 0 && (
+                      <div className="space-y-2">
+                        <h3
+                          className={`px-2 text-[10px] font-bold uppercase tracking-[0.2em] ${dm ? "text-slate-500" : "text-slate-400"}`}
+                        >
+                          Quick Actions
+                        </h3>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {searchResults.actions.map((action) => (
+                            <button
+                              key={action.id}
+                              onClick={() => {
+                                action.onClick();
+                                setShowSearch(false);
+                              }}
+                              className={`flex items-center gap-4 px-4 py-3.5 rounded-2xl border transition-all hover:scale-[1.02] text-left group ${
+                                dm
+                                  ? "bg-slate-800/50 border-white/5 hover:bg-indigo-600/20 hover:border-indigo-500/50"
+                                  : "bg-slate-50 border-slate-200 hover:bg-indigo-50 hover:border-indigo-200"
+                              }`}
+                            >
+                              <div
+                                className={`p-2.5 rounded-xl transition-colors ${dm ? "bg-slate-700 text-indigo-400 group-hover:bg-indigo-500/30 group-hover:text-white" : "bg-white text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white shadow-sm"}`}
+                              >
+                                {action.icon}
+                              </div>
+                              <div>
+                                <p
+                                  className={`text-sm font-bold ${dm ? "text-slate-200" : "text-slate-800"}`}
+                                >
+                                  {action.label}
+                                </p>
+                                <p className="text-[10px] opacity-60 font-medium">
+                                  {action.details}
+                                </p>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
-        {/* Outlet for nested routes */}
+                    {/* Recent Transactions */}
+                    {searchResults.transactions.length > 0 && (
+                      <div className="space-y-2">
+                        <h3
+                          className={`px-2 text-[10px] font-bold uppercase tracking-[0.2em] ${dm ? "text-slate-500" : "text-slate-400"}`}
+                        >
+                          Transactions
+                        </h3>
+                        <div className="space-y-1">
+                          {searchResults.transactions.map((t, idx) => (
+                            <div
+                              key={t.id || idx}
+                              className={`flex items-center justify-between px-4 py-3 rounded-2xl transition-colors cursor-pointer group ${dm ? "hover:bg-slate-800" : "hover:bg-slate-50"}`}
+                            >
+                              <div className="flex items-center gap-4">
+                                <div
+                                  className={`w-9 h-9 rounded-full flex items-center justify-center font-bold ${t.amount < 0 ? "bg-rose-500/10 text-rose-500" : "bg-emerald-500/10 text-emerald-500"}`}
+                                >
+                                  {t.amount < 0 ? "-" : "+"}
+                                </div>
+                                <div>
+                                  <p
+                                    className={`text-sm font-bold ${textPrimary}`}
+                                  >
+                                    {t.title}
+                                  </p>
+                                  <div className="flex items-center gap-2 mt-0.5">
+                                    <span
+                                      className={`text-[10px] opacity-60 font-medium ${textSecondary}`}
+                                    >
+                                      {t.category}
+                                    </span>
+                                    <span className="w-1 h-1 rounded-full bg-slate-400 opacity-30" />
+                                    <span
+                                      className={`text-[10px] opacity-60 font-medium ${textSecondary}`}
+                                    >
+                                      {new Date(t.date).toLocaleDateString()}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                              <div
+                                className={`text-sm font-black ${t.amount < 0 ? "text-rose-500" : "text-emerald-500"}`}
+                              >
+                                {formatCurrency(Math.abs(t.amount))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Coupons */}
+                    {searchResults.coupons?.length > 0 && (
+                      <div className="space-y-2">
+                        <h3
+                          className={`px-2 text-[10px] font-bold uppercase tracking-[0.2em] ${dm ? "text-slate-500" : "text-slate-400"}`}
+                        >
+                          Offers & Deals
+                        </h3>
+                        <div className="space-y-2">
+                          {searchResults.coupons.map((coupon) => (
+                            <div
+                              key={coupon.id}
+                              onClick={() => {
+                                setShowRewards(true);
+                                setShowSearch(false);
+                              }}
+                              className={`flex items-center gap-4 p-4 rounded-2xl border-2 border-dashed cursor-pointer hover:scale-[1.01] transition-all group ${
+                                dm
+                                  ? "bg-slate-800/20 border-purple-500/30 text-slate-300"
+                                  : "bg-purple-50/50 border-purple-200 text-slate-700"
+                              }`}
+                            >
+                              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center text-white shadow-lg">
+                                <FiTag size={20} />
+                              </div>
+                              <div className="flex-1">
+                                <p className="text-sm font-black text-purple-600">
+                                  {coupon.title}
+                                </p>
+                                <p className="text-[11px] opacity-70 line-clamp-1">
+                                  {coupon.description}
+                                </p>
+                              </div>
+                              <div
+                                className={`px-3 py-1 rounded-lg font-black text-xs ${dm ? "bg-slate-700 text-slate-300" : "bg-white text-slate-600 shadow-sm"}`}
+                              >
+                                VIEW
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {searchResults.actions.length === 0 &&
+                      searchResults.transactions.length === 0 && (
+                        <div className="py-12 text-center">
+                          <div
+                            className={`w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center ${dm ? "bg-slate-800" : "bg-slate-50"}`}
+                          >
+                            <FiSearch size={24} className="opacity-20" />
+                          </div>
+                          <p className={`font-bold ${textPrimary}`}>
+                            No results found for "{searchQuery}"
+                          </p>
+                          <p className={`text-xs mt-1 ${textSecondary}`}>
+                            Try searching for broad terms like 'money', 'gift'
+                            or 'pay'
+                          </p>
+                        </div>
+                      )}
+                  </div>
+                </div>
+
+                <div
+                  className={`px-6 py-3 border-t flex items-center justify-between text-[10px] font-bold uppercase tracking-wider ${dm ? "bg-slate-800 border-white/5 text-slate-500" : "bg-slate-50 border-slate-100 text-slate-400"}`}
+                >
+                  <div className="flex gap-4">
+                    <span className="flex items-center gap-1.5">
+                      <FiArrowDownLeft size={10} className="text-indigo-500" />{" "}
+                      to select
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <FiPlus size={10} className="text-indigo-500" /> to open
+                    </span>
+                  </div>
+                  <span>FacePay Global Search</span>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {!isEmbed && (
+          <AddMoneyModal
+            open={showAddMoney}
+            onClose={() => setShowAddMoney(false)}
+            onAdd={handleAddMoney}
+          />
+        )}
+
+        {!isEmbed && (
+          <WithdrawalModal
+            open={showWithdraw}
+            onClose={() => setShowWithdraw(false)}
+            balance={wallet?.balance || 0}
+            onWithdraw={(newBal) =>
+              setWallet((prev) => ({ ...prev, balance: newBal }))
+            }
+            dm={dm}
+            lang={localStorage.getItem("facepay_lang") || "English"}
+          />
+        )}
+
+        {!isEmbed && (
+          <NotificationSidebar
+            isOpen={showNotifications}
+            onClose={() => {
+              setShowNotifications(false);
+              apiFetch("/api/dashboard/notifications")
+                .then((r) => r.json())
+                .then((d) => {
+                  if (d.success) setNotiCount(d.unread || 0);
+                })
+                .catch(() => {});
+            }}
+          />
+        )}
+
         <div className="w-full max-w-7xl mx-auto">
           <Outlet />
         </div>
@@ -1386,7 +1997,6 @@ function DashboardInner() {
   );
 }
 
-// ─── EXPORT ───────────────────────────────────────────────────────────────────
 export default function Dashboard() {
   return (
     <DashboardProvider>

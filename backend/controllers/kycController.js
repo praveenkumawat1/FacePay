@@ -453,11 +453,13 @@ exports.submitAddress = async (req, res) => {
 };
 
 /**
- * ⚡ STEP 6: Complete KYC
+ * ⚡ STEP 6: Complete KYC (Automatic Approval)
  */
 exports.completeKYC = async (req, res) => {
   try {
     const userId = req.userId;
+    const { formData } = req.body;
+
     const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({
@@ -465,79 +467,47 @@ exports.completeKYC = async (req, res) => {
         message: "User not found",
       });
     }
-    // Prevent repeat KYC
-    if (user.kyc_verified) {
-      return res.status(400).json({
-        success: false,
-        message: "KYC already completed",
-      });
-    }
 
-    // Verify all steps completed
-    if (
-      !user.aadhaar_verified ||
-      !user.pan_verified ||
-      !user.selfie_verified ||
-      !user.bank_verified ||
-      !user.address_verified
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Please complete all KYC steps",
-      });
-    }
+    // Save all KYC data to the database
+    user.kyc_status = "verified";
+    user.kyclvl = 2; // Level 2: Full KYC
+    user.is_verified = true; // Overall user verification status
 
-    // Mark KYC as complete in database
-    user.kyc_status = "verified"; // Or 'under_review' for manual approval
-    user.kyc_verified = true;
-    user.kyc_verified_at = new Date();
-    user.kyc_level = 1;
-    user.terms_accepted = true;
-    user.terms_accepted_at = new Date();
+    user.kyc_data = {
+      firstName: formData.firstName,
+      lastName: formData.lastName,
+      mobile: formData.mobile,
+      state: formData.state,
+      city: formData.city,
+      dob: formData.dob,
+      fatherName: formData.fatherName,
+      address: formData.address,
+      securityQuestion: formData.securityQuestion,
+      securityAnswer: formData.securityAnswer,
+      aadhaarNumber: formData.aadhaarNumber,
+      panNumber: formData.panNumber,
+      submittedAt: new Date(),
+      verifiedAt: new Date(),
+    };
 
-    // Update limits
-    user.daily_limit = 50000; // ₹50,000
-    user.monthly_limit = 200000; // ₹2,00,000
+    // Update Transaction Limits
+    user.daily_limit = 100000;
+    user.monthly_limit = 500000;
 
     await user.save();
 
-    console.log("✅ KYC completed and saved to database");
-
-    // Add notification
-    if (!user.notifications) user.notifications = [];
-    user.notifications.unshift({
-      title: "KYC Completed! 🎉",
-      message:
-        "Your KYC has been verified successfully. Higher limits are now active!",
-      type: "success",
-      read: false,
-    });
-    await user.save();
-
-    // Send KYC completion email
-    try {
-      await sendOtpEmail(
-        user.email,
-        "Your KYC is now complete! Welcome to FacePay. You can now enjoy full features.",
-      );
-    } catch (e) {
-      console.error("Failed to send KYC completion email", e);
-    }
+    console.log(`✅ KYC Automatic Approval for User: ${user.full_name}`);
 
     res.json({
       success: true,
-      message: "KYC completed successfully",
-      kyc_certificate_id: user.kyc_session_id,
-      limits: {
-        daily: user.daily_limit,
-        monthly: user.monthly_limit,
-      },
+      message: "KYC Verified & Approved Successfully",
+      status: "verified",
     });
   } catch (error) {
-    console.error("❌ Complete KYC error:", error);
+    console.error("❌ KYC Approval Error:", error);
     res.status(500).json({
       success: false,
-      message: "Failed to complete KYC",
+      message: "Internal Server Error during KYC process",
     });
   }
 };

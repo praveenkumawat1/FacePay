@@ -148,6 +148,30 @@ const userSchema = new mongoose.Schema(
     coins: { type: Number, default: 0 },
     streak: { type: Number, default: 0 },
     lastClaimDate: { type: Date },
+
+    // ==================== KYC ====================
+    kyclvl: { type: Number, default: 0 }, // 0: None, 1: Basic, 2: Full
+    kyc_status: {
+      type: String,
+      enum: ["pending", "verified", "rejected", "none"],
+      default: "none",
+    },
+    kyc_data: {
+      firstName: String,
+      lastName: String,
+      mobile: String,
+      state: String,
+      city: String,
+      dob: Date,
+      fatherName: String,
+      address: String,
+      securityQuestion: String,
+      securityAnswer: String,
+      aadhaarNumber: String,
+      panNumber: String,
+      submittedAt: Date,
+      verifiedAt: Date,
+    },
     lastSpinDate: { type: Date, default: null }, // 👈 ADDED FOR SPIN COOLDOWN
     totalCashback: { type: Number, default: 0 },
     referralChainBonus: { type: Number, default: 0 },

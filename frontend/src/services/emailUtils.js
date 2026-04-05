@@ -4,13 +4,22 @@ export async function sendWalletStatementEmail(
   user,
   filterLabel = "All Time",
 ) {
-  // This is a placeholder. In production, call your backend API to send the email.
-  // Example POST to /api/wallet/send-statement
+  const token = localStorage.getItem("token");
+
   const res = await fetch("http://localhost:5000/api/wallet/send-statement", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
     body: JSON.stringify({ email, transactions, user, filterLabel }),
   });
+
+  if (!res.ok) {
+    const errorData = await res.json();
+    throw new Error(errorData.message || "Failed to send email");
+  }
+
   const data = await res.json();
   return data;
 }

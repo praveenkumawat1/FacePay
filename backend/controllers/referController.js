@@ -1,29 +1,44 @@
 const User = require("../models/User");
 
-// Dummy referral stats API
+// Real-time referral stats API
 exports.getReferralStats = async (req, res) => {
-  const code = req.query.code;
-  if (!code) return res.json({ stats: null });
+  try {
+    const userId = req.userId;
+    const user = await User.findById(userId)
+      .select("referral_code name email")
+      .lean();
 
-  // Dummy data for now
-  res.json({
-    stats: {
-      total: 5,
-      joined: 3,
-      rewards: 1500,
-      recent: [
-        { name: "Amit Kumar", email: "amit@email.com", date: new Date() },
-        {
-          name: "Priya Singh",
-          email: "priya@email.com",
-          date: new Date(Date.now() - 86400000),
-        },
-        {
-          name: "Rahul",
-          email: "rahul@email.com",
-          date: new Date(Date.now() - 2 * 86400000),
-        },
-      ],
-    },
-  });
+    if (!user) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+    }
+
+    // Find users referred by this user
+    const referredUsers = await User.find({ referred_by: user.referral_code })
+      .select("full_name name email createdAt")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // Reward calculation: ₹500 per friend
+    const rewards = referredUsers.length * 500;
+
+    res.json({
+      success: true,
+      stats: {
+        total: referredUsers.length,
+        joined: referredUsers.length,
+        rewards: rewards,
+        recent: referredUsers.map((u) => ({
+          name: u.full_name || u.name || "User",
+          email: u.email,
+          date: u.createdAt,
+        })),
+      },
+      referral_code: user.referral_code,
+    });
+  } catch (error) {
+    console.error("Get referral stats error:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
 };

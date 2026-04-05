@@ -15,8 +15,7 @@ const indexFace = async (imagePath, userId) => {
       CollectionId: COLLECTION_ID,
       Image: { Bytes: imageBuffer },
       ExternalImageId: userId.toString(),
-      DetectionAttributes: ["ALL"], // ⚡ CHANGED: Get all attributes including quality
-      QualityFilter: "AUTO", // ⚡ CHANGED: Enable quality filtering
+      DetectionAttributes: ["DEFAULT"], // ⚡ OPTIMIZED: Using DEFAULT for faster response
       MaxFaces: 1,
     };
 
@@ -24,8 +23,8 @@ const indexFace = async (imagePath, userId) => {
       rekognition.indexFaces(params).promise(),
       new Promise((_, reject) =>
         setTimeout(
-          () => reject(new Error("AWS timeout after 10 seconds")),
-          10000,
+          () => reject(new Error("AWS timeout after 30 seconds")),
+          30000,
         ),
       ),
     ]);
@@ -93,8 +92,8 @@ const searchFace = async (imagePath) => {
       rekognition.searchFacesByImage(params).promise(),
       new Promise((_, reject) =>
         setTimeout(
-          () => reject(new Error("AWS search timeout after 10 seconds")),
-          10000,
+          () => reject(new Error("AWS search timeout after 30 seconds")),
+          30000,
         ),
       ),
     ]);

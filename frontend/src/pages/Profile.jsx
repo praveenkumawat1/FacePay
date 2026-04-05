@@ -1,6 +1,7 @@
 import React, { useState, useRef, useMemo, useEffect } from "react";
 import { Toaster, toast } from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
+import { AnimatePresence, motion } from "framer-motion";
 
 import {
   FiUser,
@@ -104,8 +105,9 @@ export default function ProfileSection() {
   const [otpResendTimer, setOtpResendTimer] = useState(0);
 
   // KYC related state
-  const [kycStatus, setKycStatus] = useState(null);
+  const [kycStatus, setKycStatus] = useState("not_started");
   const [kycLoading, setKycLoading] = useState(false);
+  const [showKYCModal, setShowKYCModal] = useState(false);
 
   const fileInput = useRef(null);
   const videoRef = useRef(null);
@@ -172,6 +174,20 @@ export default function ProfileSection() {
       console.error("KYC status error:", error);
     } finally {
       setKycLoading(false);
+    }
+  };
+
+  const handleStartKYC = () => {
+    setShowKYCModal(true);
+  };
+
+  const handleKYCComplete = (status) => {
+    setKycStatus(status);
+    setShowKYCModal(false);
+    if (status === "pending") {
+      toast.success("KYC documents submitted successfully!");
+    } else if (status === "verified") {
+      toast.success("Congratulations! Your KYC is verified.");
     }
   };
 
@@ -787,19 +803,91 @@ export default function ProfileSection() {
                             </span>
                           )}
                         </div>
-                        {kycStatus !== "verified" && (
-                          <button
-                            onClick={() => {
-                              // Open the KYC verification page in a new tab using absolute URL
-                              const kycUrl = `${window.location.origin}/kyc-verification?userId=${profile.id}`;
-                              window.open(kycUrl, "_blank");
-                            }}
-                            className="px-6 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-bold hover:from-indigo-700 hover:to-purple-700 transition-all shadow-md hover:shadow-lg"
-                          >
-                            Start Free KYC
-                          </button>
-                        )}
+                        {kycStatus !== "verified" &&
+                          kycStatus !== "pending" && (
+                            <button
+                              onClick={handleStartKYC}
+                              className="px-6 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-bold hover:from-indigo-700 hover:to-purple-700 transition-all shadow-md hover:shadow-lg"
+                            >
+                              Start Free KYC
+                            </button>
+                          )}
                       </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6">
+                    <h3 className="font-bold text-slate-900 mb-4 text-lg flex items-center gap-2">
+                      Security Timeline
+                    </h3>
+                    <div className="space-y-6 relative before:absolute before:inset-0 before:left-4 before:w-0.5 before:bg-slate-200 before:h-full">
+                      {[
+                        {
+                          title: "KYC Verification",
+                          date:
+                            kycStatus === "verified"
+                              ? "Completed"
+                              : "Pending Action",
+                          status:
+                            kycStatus === "verified" ? "success" : "warning",
+                          desc: "Identity verification for regulatory compliance",
+                        },
+                        {
+                          title: "2FA Setup",
+                          date: "Mandatory",
+                          status: "info",
+                          desc: "Secure your account with two-factor authentication",
+                        },
+                        {
+                          title: "Last Profile Update",
+                          date: profile?.updatedAt
+                            ? new Date(profile.updatedAt).toLocaleDateString()
+                            : "Today",
+                          status: "success",
+                          desc: "Basic info was recently modified",
+                        },
+                        {
+                          title: "Device Trust",
+                          date: "Authorized",
+                          status: "success",
+                          desc: "Current browser is marked as a trusted device",
+                        },
+                      ].map((evt, i) => (
+                        <div key={i} className="relative pl-10">
+                          <div
+                            className={`absolute left-0 top-1 w-8 h-8 rounded-full border-4 border-white shadow-sm flex items-center justify-center z-10 ${
+                              evt.status === "success"
+                                ? "bg-green-500"
+                                : evt.status === "warning"
+                                  ? "bg-amber-500"
+                                  : "bg-blue-500"
+                            }`}
+                          >
+                            <FiCheck size={12} className="text-white" />
+                          </div>
+                          <div>
+                            <div className="flex justify-between items-center mb-0.5">
+                              <h4 className="text-sm font-bold text-slate-900 leading-none">
+                                {evt.title}
+                              </h4>
+                              <span
+                                className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
+                                  evt.status === "success"
+                                    ? "bg-green-100 text-green-700"
+                                    : evt.status === "warning"
+                                      ? "bg-amber-100 text-amber-700"
+                                      : "bg-blue-100 text-blue-700"
+                                }`}
+                              >
+                                {evt.date}
+                              </span>
+                            </div>
+                            <p className="text-xs text-slate-500 leading-tight">
+                              {evt.desc}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
 
@@ -1259,6 +1347,43 @@ export default function ProfileSection() {
           </div>
         </div>
       )}
+
+      {/* KYC MODAL */}
+      <AnimatePresence>
+        {showKYCModal && profile && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-md overflow-y-auto">
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="relative w-full max-w-4xl min-h-[600px] bg-white rounded-3xl shadow-2xl flex flex-col overflow-hidden my-8"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="absolute top-4 right-4 z-10">
+                <button
+                  onClick={() => setShowKYCModal(false)}
+                  className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-full transition-colors"
+                >
+                  <FiX size={20} />
+                </button>
+              </div>
+
+              <div className="flex-1 flex flex-col md:flex-row h-full overflow-hidden">
+                {/* KYC UI Logic here - Importing component style */}
+                <iframe
+                  src={`/dashboard/kyc-verification?userId=${profile.id}&embed=true`}
+                  className="w-full h-full border-0 min-h-[700px]"
+                  title="KYC Verification"
+                  onLoad={(e) => {
+                    // This is a placeholder for real message passing if needed
+                    console.log("KYC Iframe loaded");
+                  }}
+                />
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Photo Upload Modal */}
       {showPhotoModal && (

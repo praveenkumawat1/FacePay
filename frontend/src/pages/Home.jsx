@@ -58,6 +58,7 @@ import CursorTrailImages from "../components/CursorTrailImages";
 import ModernLaptopShowcase from "../components/ModernLaptopShowcase";
 import DashboardStack from "../components/DashboardStack";
 import HyperPerfectReveal from "../components/HyperPerfectReveal";
+import FraudAnalysisGraph from "../components/FraudAnalysisGraph";
 import AestheticSplitReveal from "../components/AestheticSplitReveal";
 import IndustrialCleanSecurity from "../components/IndustrialCleanSecurity";
 import StatsBridge from "../components/StatsBridge";
@@ -130,7 +131,11 @@ const Home = () => {
 
   const handleMouseEnterTarget = () => setShowPopup(true);
   const handleMouseLeaveTarget = (e) => {
-    if (!popupRef.current || !popupRef.current.contains(e.relatedTarget)) {
+    if (
+      !popupRef.current ||
+      (e.relatedTarget instanceof Node &&
+        !popupRef.current.contains(e.relatedTarget))
+    ) {
       setShowPopup(false);
     }
   };
@@ -419,6 +424,9 @@ const Home = () => {
           <main className="flex-1 p-10 bg-slate-900 text-white overflow-y-auto">
             <DashHeader title="Security & Vault" isDark />
             <div className="space-y-6">
+              {/* ADVANCED FRAUD ANALYSIS GRAPH */}
+              <FraudAnalysisGraph />
+
               {/* Linked Accounts */}
               <div className="bg-white/5 border border-white/10 rounded-3xl p-6">
                 <h4 className="font-bold text-white mb-4 flex items-center gap-2">

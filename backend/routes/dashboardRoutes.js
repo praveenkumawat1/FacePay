@@ -19,10 +19,28 @@ router.get("/", dashboardController.getDashboardData);
 router.post("/add-money", dashboardController.addMoney);
 
 /**
+ * POST /api/dashboard/withdraw
+ * Withdraw money from wallet
+ */
+router.post("/withdraw", dashboardController.withdrawMoney);
+
+/**
  * GET /api/dashboard/transactions
  * Get all transactions
  */
 router.get("/transactions", dashboardController.getTransactions);
+
+/**
+ * GET /api/dashboard/users
+ * Search users for request money
+ */
+router.get("/users", dashboardController.getSearchUsers);
+
+/**
+ * POST /api/dashboard/request-money
+ * Request money from a user
+ */
+router.post("/request-money", dashboardController.requestMoney);
 
 /**
  * GET /api/dashboard/notifications

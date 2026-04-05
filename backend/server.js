@@ -4,6 +4,8 @@ const fs = require("fs");
 const session = require("express-session");
 const mongoose = require("mongoose");
 const compression = require("compression"); // ✅ ADDED: response compression
+const http = require("http");
+const WebSocket = require("ws");
 require("dotenv").config();
 
 const connectDB = require("./config/db");
@@ -16,6 +18,39 @@ const razorpayRoutes = require("./routes/razorpay");
 const { responseTime } = require("./middleware/security");
 
 const app = express();
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ server });
+
+// Store connected clients: userId -> Set of WS connections
+const clients = new Map();
+
+wss.on("connection", (ws, req) => {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  const userId = url.searchParams.get("userId");
+
+  if (userId) {
+    if (!clients.has(userId)) clients.set(userId, new Set());
+    clients.get(userId).add(ws);
+    // console.log(`✅ WebSocket: User ${userId} connected`);
+
+    ws.on("close", () => {
+      const userConns = clients.get(userId);
+      if (userConns) {
+        userConns.delete(ws);
+        if (userConns.size === 0) clients.delete(userId);
+      }
+      // console.log(`❌ WebSocket: User ${userId} disconnected`);
+    });
+  }
+});
+
+// Attach helper to request for controllers to use
+app.use((req, res, next) => {
+  req.wss = wss;
+  req.clients = clients;
+  next();
+});
+
 const PORT = process.env.PORT || 5000;
 
 // ============================================
@@ -95,6 +130,19 @@ app.use((req, res, next) => {
   next();
 });
 
+// ✅ Global request timeout (120s) to prevent early socket closure
+app.use((req, res, next) => {
+  res.setTimeout(120000, () => {
+    console.error(
+      `🔴 Request ${req.method} ${req.path} - 120s Server Timeout reached`,
+    );
+    if (!res.headersSent) {
+      res.status(408).json({ success: false, message: "Server timeout" });
+    }
+  });
+  next();
+});
+
 // ✅ Dashboard DB health check middleware
 app.use("/api/dashboard", (req, res, next) => {
   if (mongoose.connection.readyState !== 1) {
@@ -147,7 +195,15 @@ app.use("/api/session", sessionRoutes);
 app.use("/api/login-otp", loginOtpRoutes);
 app.use("/api/face", faceRoutes);
 app.use("/api/wallet", walletRoutes);
-app.use("/api/aws-face", awsFaceRoutes);
+app.use(
+  "/api/aws-face",
+  (req, res, next) => {
+    // Give AWS routes specifically 3 mins to finish (for large uploads/slow AWS)
+    req.setTimeout(180000);
+    next();
+  },
+  awsFaceRoutes,
+);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/security", securityRoutes);
 app.use("/api/kyc", kycRoutes);
@@ -693,7 +749,7 @@ app.use((err, req, res, next) => {
 // ============================================
 // START SERVER
 // ============================================
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log("");
   console.log("╔═══════════════════════════════════════════════════════╗");
   console.log("║       🚀 FacePay Backend Server v3.1 Started        ║");

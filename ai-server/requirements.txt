@@ -1,0 +1,9 @@
+numpy
+scikit-learn
+joblib
+opencv-python
+mediapipe
+flask
+flask-cors
+pymongo
+python-dotenv

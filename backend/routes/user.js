@@ -1,12 +1,38 @@
 const express = require("express");
 const router = express.Router();
 const User = require("../models/User");
+const Coupon = require("../models/Coupon");
 const CoinHistory = require("../models/CoinHistory");
 const auth = require("../middleware/auth");
+const { sendNotification } = require("../utils/notification");
 
 // Helper function to generate unique referral code
 const generateReferralCode = () =>
   "USER" + Math.random().toString(36).substring(2, 8).toUpperCase();
+
+// Helper to record history safely
+async function recordHistory(userId, label, coins, type = "credit") {
+  try {
+    await CoinHistory.create({
+      userId,
+      label,
+      coins,
+      type,
+      time: new Date().toLocaleString("en-IN"),
+    });
+  } catch (_) {}
+}
+
+// Helper to get random coupon
+async function getRandomCoupon() {
+  try {
+    const coupons = await Coupon.find({ expiryDate: { $gt: new Date() } });
+    if (!coupons || coupons.length === 0) return null;
+    return coupons[Math.floor(Math.random() * coupons.length)];
+  } catch (_) {
+    return null;
+  }
+}
 
 // ==================== USER STATS ====================
 // GET /api/user/stats
@@ -77,6 +103,12 @@ router.post("/claim-daily", auth, async (req, res) => {
     user.lastClaimDate = new Date();
     await user.save();
 
+    await sendNotification(user._id, {
+      title: "Daily Reward Claimed",
+      message: "You've earned 50 coins! Keep your streak alive to earn more.",
+      type: "success",
+    });
+
     await CoinHistory.create({
       userId: user._id,
       label: "Daily Claim",
@@ -120,36 +152,52 @@ router.post("/spin-result", auth, async (req, res) => {
 
     let coinChange = 0;
     let historyLabel = "Spin: ";
+    let notificationTitle = "Spin Wheel Result";
+    let notificationMessage = "";
+    let wonCoupon = null;
+
     if (typeof result.value === "number" && result.value > 0) {
       coinChange = result.value;
       historyLabel += `won ${result.value} coins`;
+      notificationMessage = `Congratulations! You won ${result.value} coins from the lucky spin.`;
     } else if (result.value === "coupon") {
       coinChange = 0;
-      historyLabel += "won a coupon";
-      // Optionally create a coupon for the user
+      wonCoupon = await getRandomCoupon();
+      if (wonCoupon) {
+        historyLabel += `won ${wonCoupon.brand} coupon`;
+        notificationMessage = `Awesome! You won a ${wonCoupon.brand} (${wonCoupon.discount}) coupon!`;
+      } else {
+        coinChange = 25; // fallback
+        historyLabel += "won bonus coins (no coupons avail)";
+        notificationMessage =
+          "No coupons available right now, so we gave you 25 bonus coins!";
+      }
     } else if (result.value === "mystery") {
       coinChange = 65;
       historyLabel += "mystery box";
+      notificationMessage = "Jackpot! The Mystery Box gave you 65 bonus coins!";
     } else {
       coinChange = 0;
       historyLabel += "try again";
+      notificationMessage = "Better luck next time! Try again tomorrow.";
     }
 
     user.coins += coinChange;
     user.lastSpinDate = new Date(); // update last spin time
     await user.save();
 
-    if (coinChange > 0) {
-      await CoinHistory.create({
-        userId: user._id,
-        label: historyLabel,
-        coins: coinChange,
-        type: "credit",
-      });
+    await sendNotification(user._id, {
+      title: notificationTitle,
+      message: notificationMessage,
+      type: coinChange > 0 || wonCoupon ? "success" : "info",
+    });
+
+    if (coinChange > 0 || wonCoupon) {
+      await recordHistory(user._id, historyLabel, coinChange, "credit");
     }
 
     const nextSpinTime = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    res.json({ newCoins: user.coins, nextSpinTime });
+    res.json({ success: true, newCoins: user.coins, nextSpinTime, wonCoupon });
   } catch (err) {
     console.error("Error in /spin-result:", err);
     res.status(500).json({ error: err.message });
@@ -180,12 +228,19 @@ router.post("/scratch-reveal", auth, async (req, res) => {
     await user.save();
 
     if (coinGain > 0) {
-      await CoinHistory.create({
-        userId: user._id,
-        label: "Scratch Card",
-        coins: coinGain,
-        type: "credit",
-      });
+      await Promise.all([
+        CoinHistory.create({
+          userId: user._id,
+          label: "Scratch Card",
+          coins: coinGain,
+          type: "credit",
+        }),
+        sendNotification(user._id, {
+          title: "Scratch Card Reward! 🎁",
+          message: `Congratulations! You just won ${coinGain} coins from a Scratch Card!`,
+          type: "success",
+        }),
+      ]);
     }
 
     res.json({ newCoins: user.coins });

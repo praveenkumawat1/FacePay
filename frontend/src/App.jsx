@@ -22,8 +22,6 @@ import MobileScanPage from "./pages/MobileScanPage";
 import CookieConsent from "./components/CookieConsent";
 import KYCVerification from "./pages/KYCVerification";
 import LoadingScreen from "./pages/LoadingScreen";
-
-// ✅ Correct import — aapki file ke actual export names
 import { DashboardProvider } from "./pages/DashboardContext";
 
 function AppContent() {

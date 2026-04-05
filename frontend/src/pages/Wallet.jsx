@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import AddMoneyModal from "./AddMoneyModal";
+import WithdrawalModal from "./WithdrawalModal";
 import ReferStatsModal from "./ReferStatsModal";
 import { saveAs } from "file-saver";
 import { generateWalletStatementPDF } from "../services/pdfUtils";
@@ -268,7 +269,8 @@ function AnalyticsModal({ open, onClose, transactions, dm }) {
   const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const dayCounts = Array(7).fill(0);
   transactions.forEach((t) => {
-    dayCounts[new Date(t.created_at).getDay()]++;
+    const gDate = t.date || t.created_at || t.createdAt || t.time;
+    dayCounts[new Date(gDate).getDay()]++;
   });
   const mostActiveDay = days[dayCounts.indexOf(Math.max(...dayCounts))];
   return (
@@ -341,7 +343,9 @@ function exportTransactionsCSV(transactions) {
   const header = "Date,Type,Amount,Status,Description";
   const rows = transactions.map((t) =>
     [
-      new Date(t.created_at).toLocaleString(),
+      new Date(
+        t.date || t.created_at || t.createdAt || t.time,
+      ).toLocaleString(),
       t.type,
       t.amount,
       t.status,
@@ -723,6 +727,7 @@ export default function Wallet() {
   const [emailLoading, setEmailLoading] = useState(false);
   const [linkedAccounts, setLinkedAccounts] = useState([]);
   const [showAddMoney, setShowAddMoney] = useState(false);
+  const [showWithdraw, setShowWithdraw] = useState(false);
   const [rewardCode, setRewardCode] = useState(null);
   const [rewardExpiry, setRewardExpiry] = useState(null);
   const [rewardCountdown, setRewardCountdown] = useState("");
@@ -792,6 +797,8 @@ export default function Wallet() {
         navigate("/login");
         return;
       }
+
+      // 1. Dashboard & Profile
       const dashRes = await fetch("http://localhost:5000/api/dashboard", {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -800,26 +807,59 @@ export default function Wallet() {
         setProfile(dashData.user);
         setWallet(dashData.wallet);
         setBalance(dashData.wallet.balance || 0);
-        setLinkedAccounts([
-          {
-            type: "wallet",
-            name: "FacePay Wallet",
-            key: dashData.wallet.wallet_key,
-            isPrimary: true,
-          },
-        ]);
       }
-      const txnRes = await fetch(
-        "http://localhost:5000/api/wallet/transactions",
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
+
+      // 2. Transactions (Real-time history)
+      const txnRes = await fetch("http://localhost:5000/api/wallet/history", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       const txnData = await txnRes.json();
       if (txnData.success) {
         setTransactions(txnData.transactions || []);
         calcWeekly(txnData.transactions || []);
       }
-    } catch {
-      toast.error("Failed to load data");
+
+      // 3. Linked Accounts (Real-time Bank/UPI)
+      const bankRes = await fetch(
+        "http://localhost:5000/api/wallet/bank-info",
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      const bankData = await bankRes.json();
+      if (bankData.success) {
+        const accounts = [];
+        // Add primary wallet
+        if (dashData.wallet) {
+          accounts.push({
+            type: "wallet",
+            name: "FacePay Wallet",
+            key: dashData.wallet.wallet_key,
+            isPrimary: true,
+          });
+        }
+        // Add other linked accounts from DB
+        if (bankData.linkedAccounts) {
+          accounts.push(...bankData.linkedAccounts);
+        }
+        setLinkedAccounts(accounts);
+      }
+
+      // 4. Referral Stats (Real-time)
+      const referRes = await fetch(
+        "http://localhost:5000/api/wallet/referral/stats",
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      const referData = await referRes.json();
+      if (referData.success) {
+        setRewardCode(referData.referral_code);
+        // We can also store more stats if needed for the modal
+      }
+    } catch (error) {
+      console.error("Fetch wallet data error:", error);
+      toast.error("Failed to sync data");
     } finally {
       setLoading(false);
     }
@@ -829,8 +869,9 @@ export default function Wallet() {
     const w = [0, 0, 0, 0, 0, 0, 0];
     const today = new Date();
     txns.forEach((t) => {
-      const d = Math.floor((today - new Date(t.created_at)) / 86400000);
-      if (d < 7 && t.type === "debit") w[6 - d] += Math.abs(t.amount);
+      const gDate = t.time || t.date || t.createdAt;
+      const d = Math.floor((today - new Date(gDate)) / 86400000);
+      if (d < 7 && t.type === "sent") w[6 - d] += Math.abs(t.amount);
     });
     const mx = Math.max(...w, 1);
     setWeeklySpending(w.map((v) => (v / mx) * 100));
@@ -841,12 +882,15 @@ export default function Wallet() {
       statusFilter === "all"
         ? transactions
         : transactions.filter((t) => t.status === statusFilter);
-    if (filterDay !== "all")
-      txns = txns.filter(
-        (t) =>
-          Math.floor((new Date() - new Date(t.created_at)) / 86400000) ===
-          Number(filterDay),
-      );
+    if (filterDay !== "all") {
+      txns = txns.filter((t) => {
+        const gDate = t.date || t.created_at || t.createdAt || t.time;
+        return (
+          Math.floor((new Date() - new Date(gDate)) / 86400000) ===
+          Number(filterDay)
+        );
+      });
+    }
     return txns;
   }, [transactions, statusFilter, filterDay]);
 
@@ -854,14 +898,63 @@ export default function Wallet() {
     setBalance((p) => p + amount);
     fetchWalletData();
   };
-  const handleAccountAdded = (acc) => setLinkedAccounts((p) => [...p, acc]);
-  const handleRemoveAccount = (idx) => {
-    if (linkedAccounts[idx].isPrimary) {
+
+  const handleAccountAdded = async (acc) => {
+    try {
+      const token = localStorage.getItem("facepay_token");
+      const res = await fetch("http://localhost:5000/api/wallet/link-account", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(acc),
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success("Account linked!");
+        fetchWalletData();
+      } else {
+        toast.error(data.message || "Failed to link");
+      }
+    } catch (e) {
+      toast.error("Error linking account");
+    }
+  };
+
+  const handleRemoveAccount = async (idx) => {
+    const acc = linkedAccounts[idx];
+    if (acc.isPrimary) {
       toast.error("Cannot remove primary wallet");
       return;
     }
-    setLinkedAccounts((p) => p.filter((_, i) => i !== idx));
-    toast.success("Account removed");
+
+    try {
+      const token = localStorage.getItem("facepay_token");
+      // Note: We need the real _id from the backend.
+      // If we don't have it in the array yet, we'll need it.
+      // For now, let's assume we fetch it in fetchWalletData.
+      if (!acc._id) {
+        // fallback if it's a dummy
+        setLinkedAccounts((p) => p.filter((_, i) => i !== idx));
+        return;
+      }
+
+      const res = await fetch(
+        `http://localhost:5000/api/wallet/remove-account/${acc._id}`,
+        {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      const data = await res.json();
+      if (data.success) {
+        toast.success("Account removed");
+        fetchWalletData();
+      }
+    } catch (e) {
+      toast.error("Error removing account");
+    }
   };
 
   const getAccountIcon = (type) => {
@@ -1074,7 +1167,7 @@ export default function Wallet() {
                   dm={dm}
                   icon={<FiDownload />}
                   label={wt.withdraw}
-                  onClick={() => toast("Coming soon")}
+                  onClick={() => setShowWithdraw(true)}
                 />
                 <ActionButton
                   dm={dm}
@@ -1179,18 +1272,21 @@ export default function Wallet() {
                       disabled={emailLoading}
                       onClick={async () => {
                         setEmailLoading(true);
-                        const res = await sendWalletStatementEmail(
-                          profile?.email,
-                          filteredTxns,
-                          profile,
-                          filterDay === "all"
-                            ? "All Time"
-                            : `${filterDay} day(s) ago`,
-                        );
-                        setEmailLoading(false);
-                        res.success
-                          ? toast.success("Statement sent!")
-                          : toast.error(res.message || "Failed");
+                        try {
+                          await sendWalletStatementEmail(
+                            profile?.email,
+                            filteredTxns,
+                            profile,
+                            filterDay === "all"
+                              ? "All Time"
+                              : `${filterDay} day(s) ago`,
+                          );
+                          toast.success("Statement sent to email!");
+                        } catch (err) {
+                          toast.error(err.message || "Failed to send email");
+                        } finally {
+                          setEmailLoading(false);
+                        }
                       }}
                       className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${dm ? "bg-emerald-700 hover:bg-emerald-600 text-white" : "bg-emerald-600 hover:bg-emerald-700 text-white"} disabled:opacity-50`}
                     >
@@ -1201,14 +1297,16 @@ export default function Wallet() {
               </div>
 
               {/* Transaction list */}
-              <div className={`divide-y ${divider}`}>
+              <div
+                className={`divide-y ${divider} max-h-[500px] overflow-y-auto custom-scrollbar`}
+              >
                 {filteredTxns.length > 0 ? (
-                  filteredTxns.slice(0, 6).map((txn, idx) => (
+                  filteredTxns.map((txn, idx) => (
                     <motion.div
-                      key={txn._id}
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      transition={{ delay: idx * 0.05 }}
+                      key={txn.id || txn._id || txn.transaction_id}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: Math.min(idx * 0.05, 0.5) }}
                       className={`flex items-center justify-between px-6 py-4 transition cursor-pointer ${dm ? "hover:bg-slate-800/50" : "hover:bg-slate-50"}`}
                     >
                       <div className="flex items-center gap-3.5">
@@ -1223,10 +1321,20 @@ export default function Wallet() {
                         </div>
                         <div>
                           <p className={`font-semibold text-sm ${textPri}`}>
-                            {txn.description || txn.type}
+                            {txn.title || txn.description || txn.type}
                           </p>
                           <p className={`text-xs mt-0.5 ${textSec}`}>
-                            {new Date(txn.created_at).toLocaleDateString()}
+                            {new Date(
+                              txn.date ||
+                                txn.created_at ||
+                                txn.createdAt ||
+                                txn.time,
+                            ).toLocaleString([], {
+                              day: "2-digit",
+                              month: "short",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
                           </p>
                         </div>
                       </div>
@@ -1390,6 +1498,14 @@ export default function Wallet() {
         open={showAddMoney}
         onClose={() => setShowAddMoney(false)}
         onAdd={handleMoneyAdded}
+      />
+      <WithdrawalModal
+        open={showWithdraw}
+        onClose={() => setShowWithdraw(false)}
+        balance={balance}
+        onWithdraw={(newBalance) => setBalance(newBalance)}
+        dm={dm}
+        lang={language}
       />
       <AddAccountModal
         open={showAddAccount}

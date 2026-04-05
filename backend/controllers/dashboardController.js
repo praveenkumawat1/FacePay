@@ -3,6 +3,7 @@ const Transaction = require("../models/Transaction");
 const Wallet = require("../models/Wallet");
 const crypto = require("crypto");
 const redis = require("../config/redis");
+const sendOtpEmail = require("../utils/sendOtpEmail");
 
 function generateTransactionId() {
   return (
@@ -12,8 +13,6 @@ function generateTransactionId() {
   );
 }
 
-// ─── Coupon Config ─────────────────────────────────────────────────────────────
-// Frontend ke saath match karna zaroori hai
 const COUPONS = {
   WALLET50: {
     discount: 50,
@@ -29,13 +28,13 @@ const COUPONS = {
   },
 };
 
-// ─── Fee Calculator ────────────────────────────────────────────────────────────
 function calculateFee(paymentMethod, amount) {
   switch (paymentMethod) {
     case "card":
-      return parseFloat((amount * 0.02).toFixed(2)); // 2%
+      return parseFloat((amount * 0.02).toFixed(2));
     case "netbanking":
-      return 10; // flat ₹10
+      return 10;
+    case "razorpay":
     case "upi":
     case "qr":
     default:
@@ -43,9 +42,7 @@ function calculateFee(paymentMethod, amount) {
   }
 }
 
-/**
- * ================= DASHBOARD API =================
- */
+// ─── DASHBOARD API ────────────────────────────────────────────────────────────
 exports.getDashboardData = async (req, res) => {
   try {
     const userId = req.userId;
@@ -60,16 +57,12 @@ exports.getDashboardData = async (req, res) => {
     try {
       const cached = await redis.get(cacheKey);
       if (cached) {
-        console.log("⚡ [Dashboard] Redis cache hit");
         res.setHeader("X-Cache", "HIT");
         return res.json(JSON.parse(cached));
       }
     } catch (cacheErr) {
       console.warn("⚠️ [Redis] Read failed:", cacheErr.message);
     }
-
-    console.log("📊 [Dashboard] MongoDB se fetch ho raha hai...");
-    const start = Date.now();
 
     const thisMonthStart = new Date(
       new Date().getFullYear(),
@@ -83,7 +76,7 @@ exports.getDashboardData = async (req, res) => {
         Wallet.findOne({ user_id: userId }).lean(),
         Transaction.find({ user_id: userId })
           .sort({ createdAt: -1 })
-          .limit(10)
+          .limit(50)
           .lean(),
         Transaction.find({
           user_id: userId,
@@ -94,31 +87,30 @@ exports.getDashboardData = async (req, res) => {
       ],
     );
 
-    console.log(`📊 [Dashboard] MongoDB fetch done in ${Date.now() - start}ms`);
-
     if (!user) {
       return res
         .status(404)
         .json({ success: false, message: "User not found" });
     }
 
-    let userData = user;
-    try {
-      const userInstance = new User(user);
-      userData = userInstance.toDecrypted();
-    } catch (err) {
-      console.error("Decryption error:", err.message);
-    }
+    // ✅ FIX: Decrypt manually instead of instantiating full Mongoose document
+    const { decrypt } = require("../utils/crypto");
+    const safeDecrypt = (val) => {
+      if (!val) return val;
+      try {
+        return decrypt(val);
+      } catch {
+        return val;
+      }
+    };
 
-    let walletData = wallet;
-    if (!wallet) {
-      const wallet_key = crypto.randomBytes(32).toString("hex");
-      walletData = await Wallet.create({
+    const walletData =
+      wallet ||
+      (await Wallet.create({
         user_id: userId,
-        wallet_key,
+        wallet_key: crypto.randomBytes(32).toString("hex"),
         balance: 100,
-      });
-    }
+      }));
 
     const monthlySpending = monthlyTransactions
       .filter((t) => t.type === "debit")
@@ -143,13 +135,19 @@ exports.getDashboardData = async (req, res) => {
       success: true,
       user: {
         _id: user._id,
-        name: userData.full_name || user.full_name,
-        full_name: userData.full_name || user.full_name,
-        email: userData.email,
-        mobile: userData.mobile,
+        name: user.full_name,
+        full_name: user.full_name,
+        email: safeDecrypt(user.email),
+        mobile: safeDecrypt(user.mobile),
         profile_picture: user.profile_picture,
         kyc_verified: user.kyc_verified || false,
+        face_enrolled: !!user.awsFaceId, // ✅ ADDED: Front-end checking
+        awsFaceId: user.awsFaceId, // ✅ ADDED: Front-end checking
         createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+        upi_id: user.upi_id,
+        kyc_status: user.kyc_status || "not_started",
+        kyc_level: user.kyc_level || 0,
       },
       wallet: {
         balance: walletData?.balance ?? 0,
@@ -170,15 +168,11 @@ exports.getDashboardData = async (req, res) => {
         categorySpending,
         transactionCount: transactions.length,
       },
-      notifications: {
-        unread: unreadNotifications,
-        total: user.notifications ? user.notifications.length : 0,
-      },
+      notifications: user.notifications || [],
     };
 
     try {
       await redis.setex(cacheKey, 120, JSON.stringify(responseData));
-      console.log("✅ [Redis] Cached for 2 minutes");
     } catch (cacheErr) {
       console.warn("⚠️ [Redis] Write failed:", cacheErr.message);
     }
@@ -187,23 +181,13 @@ exports.getDashboardData = async (req, res) => {
     return res.json(responseData);
   } catch (error) {
     console.error("❌ Dashboard error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Failed to fetch dashboard data",
-      error: process.env.NODE_ENV === "development" ? error.message : undefined,
-    });
+    return res
+      .status(500)
+      .json({ success: false, message: "Failed to fetch dashboard data" });
   }
 };
 
-/**
- * =============== ADD MONEY =================
- * Supports:
- *  - payment_method: upi | card | netbanking | qr
- *  - coupon: WALLET50 | FOODFEST (optional)
- *  - razorpay_payment_id: Razorpay se verify ke baad pass karo (optional)
- *  - razorpay_order_id: Razorpay order ID (optional)
- *  - razorpay_signature: Razorpay signature (optional)
- */
+// ─── ADD MONEY ────────────────────────────────────────────────────────────────
 exports.addMoney = async (req, res) => {
   try {
     const userId = req.userId;
@@ -216,7 +200,6 @@ exports.addMoney = async (req, res) => {
       razorpay_signature,
     } = req.body;
 
-    // ── Validation ──────────────────────────────────────────────────────────
     const numAmount = parseFloat(amount);
     if (!numAmount || numAmount < 10) {
       return res
@@ -230,103 +213,81 @@ exports.addMoney = async (req, res) => {
       });
     }
 
-    const validMethods = ["upi", "card", "netbanking", "qr"];
+    const validMethods = ["upi", "card", "netbanking", "qr", "razorpay"];
     if (payment_method && !validMethods.includes(payment_method)) {
       return res
         .status(400)
         .json({ success: false, message: "Invalid payment method" });
     }
 
-    // ── Razorpay Signature Verify (agar Razorpay use kar rahe ho) ───────────
     if (razorpay_payment_id && razorpay_order_id && razorpay_signature) {
       const expectedSignature = crypto
         .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
         .update(`${razorpay_order_id}|${razorpay_payment_id}`)
         .digest("hex");
-
       if (expectedSignature !== razorpay_signature) {
-        console.error("❌ [Razorpay] Invalid signature");
         return res.status(400).json({
           success: false,
           message: "Payment verification failed. Invalid signature.",
         });
       }
-      console.log("✅ [Razorpay] Signature verified");
     }
 
-    // ── Fee Calculate karo ──────────────────────────────────────────────────
     const fee = calculateFee(payment_method || "upi", numAmount);
-    const totalCharged = numAmount + fee; // user ne kitna pay kiya
+    const totalCharged = numAmount + fee;
 
-    // ── Coupon Validate karo ────────────────────────────────────────────────
     let couponApplied = null;
     let cashbackAmount = 0;
 
     if (coupon) {
       const couponData = COUPONS[coupon.toUpperCase()];
-
-      if (!couponData) {
+      if (!couponData)
         return res
           .status(400)
           .json({ success: false, message: `Invalid coupon code: ${coupon}` });
-      }
-
-      if (numAmount < couponData.minAmount) {
+      if (numAmount < couponData.minAmount)
         return res.status(400).json({
           success: false,
           message: `Coupon "${coupon}" requires minimum ₹${couponData.minAmount}`,
         });
-      }
-
-      if (payment_method && !couponData.validPayment.includes(payment_method)) {
+      if (payment_method && !couponData.validPayment.includes(payment_method))
         return res.status(400).json({
           success: false,
           message: `Coupon "${coupon}" is not valid for ${payment_method}`,
         });
-      }
-
       couponApplied = coupon.toUpperCase();
       cashbackAmount = couponData.discount;
-      console.log(
-        `✅ [Coupon] ${couponApplied} applied — cashback: ₹${cashbackAmount}`,
-      );
     }
 
-    // ── User + Wallet fetch karo ────────────────────────────────────────────
-    const [user, wallet] = await Promise.all([
-      User.findById(userId),
-      Wallet.findOne({ user_id: userId }),
-    ]);
+    const [wallet] = await Promise.all([Wallet.findOne({ user_id: userId })]);
 
-    if (!user) {
+    // ✅ FIX: User.exists() — no full document load needed just for wallet check
+    const userExists = await User.exists({ _id: userId });
+    if (!userExists)
       return res
         .status(404)
         .json({ success: false, message: "User not found" });
-    }
 
     let activeWallet = wallet;
     if (!activeWallet) {
-      const wallet_key = crypto.randomBytes(32).toString("hex");
       activeWallet = await Wallet.create({
         user_id: userId,
-        wallet_key,
+        wallet_key: crypto.randomBytes(32).toString("hex"),
         balance: 0,
       });
     }
 
-    // ── Balance update karo ─────────────────────────────────────────────────
     const balanceBefore = activeWallet.balance;
     const balanceAfterTopup = balanceBefore + numAmount;
     const balanceAfterCashback = balanceAfterTopup + cashbackAmount;
 
     activeWallet.balance = balanceAfterCashback;
 
-    // ── Main Transaction ────────────────────────────────────────────────────
     const mainTxn = new Transaction({
       user_id: userId,
       type: "credit",
       amount: numAmount,
-      fee: fee,
+      fee,
       balance_before: balanceBefore,
       balance_after: balanceAfterTopup,
       category: "Add Money",
@@ -340,7 +301,6 @@ exports.addMoney = async (req, res) => {
       ...(couponApplied && { coupon_code: couponApplied }),
     });
 
-    // ── Cashback Transaction (agar coupon laga) ─────────────────────────────
     let cashbackTxn = null;
     if (cashbackAmount > 0) {
       cashbackTxn = new Transaction({
@@ -360,48 +320,53 @@ exports.addMoney = async (req, res) => {
       });
     }
 
-    // ── Notification ────────────────────────────────────────────────────────
-    if (!user.notifications) user.notifications = [];
-
-    user.notifications.unshift({
+    // ✅ FIX: Notification add using updateOne — NO user.save(), NO pre-save hook
+    const notifEntry = {
+      _id: new (require("mongoose").Types.ObjectId)(),
       title: "Money Added Successfully",
       message: `₹${numAmount.toLocaleString()} added to your wallet via ${payment_method?.toUpperCase() || "UPI"}`,
       type: "success",
       read: false,
-    });
+      time: new Date().toISOString(),
+      createdAt: new Date(),
+    };
 
+    const pushNotifs = [notifEntry];
     if (cashbackAmount > 0) {
-      user.notifications.unshift({
+      pushNotifs.unshift({
+        _id: new (require("mongoose").Types.ObjectId)(),
         title: `₹${cashbackAmount} Cashback Credited!`,
         message: `${COUPONS[couponApplied].description} applied on your top-up`,
         type: "success",
         read: false,
+        time: new Date().toISOString(),
+        createdAt: new Date(),
       });
     }
 
-    if (user.notifications.length > 50) {
-      user.notifications = user.notifications.slice(0, 50);
-    }
+    const saveOps = [
+      activeWallet.save(),
+      mainTxn.save(),
+      // ✅ updateOne — skips the entire pre-save hook (no bcrypt, no encryption)
+      User.updateOne(
+        { _id: userId },
+        {
+          $push: { notifications: { $each: pushNotifs, $position: 0 } },
+          $set: { lastTransactionDate: new Date() },
+        },
+      ),
+    ];
+    if (cashbackTxn) saveOps.push(cashbackTxn.save());
 
-    // ── Save sab ek saath ───────────────────────────────────────────────────
-    const saveOperations = [activeWallet.save(), mainTxn.save(), user.save()];
-    if (cashbackTxn) saveOperations.push(cashbackTxn.save());
+    await Promise.all(saveOps);
 
-    await Promise.all(saveOperations);
-
-    // ── Redis cache clear ───────────────────────────────────────────────────
+    // ✅ Redis cache clear
     try {
       await redis.del(`dashboard:${userId}`);
-      console.log("✅ [Redis] Cache cleared after addMoney");
     } catch (err) {
       console.warn("⚠️ [Redis] Cache clear failed:", err.message);
     }
 
-    console.log(
-      `✅ [AddMoney] ₹${numAmount} added for user ${userId} | Fee: ₹${fee} | Cashback: ₹${cashbackAmount}`,
-    );
-
-    // ── Response ────────────────────────────────────────────────────────────
     return res.json({
       success: true,
       message: "Money added successfully",
@@ -413,14 +378,14 @@ exports.addMoney = async (req, res) => {
         id: mainTxn._id,
         transaction_id: mainTxn.transaction_id,
         amount: numAmount,
-        fee: fee,
+        fee,
         total_charged: totalCharged,
         balance: activeWallet.balance,
         date: mainTxn.createdAt,
         title: mainTxn.title,
         category: mainTxn.category,
         status: mainTxn.status,
-        payment_method: payment_method,
+        payment_method,
         ...(couponApplied && {
           coupon: {
             code: couponApplied,
@@ -438,9 +403,175 @@ exports.addMoney = async (req, res) => {
   }
 };
 
-/**
- * ================ GET TRANSACTIONS =================
- */
+// ─── WITHDRAW MONEY ─────────────────────────────────────────────────────────
+exports.withdrawMoney = async (req, res) => {
+  try {
+    const userId = req.userId;
+    const { amount, method, destination, account_name, ifsc, phone } = req.body;
+
+    if (!amount || isNaN(amount) || amount <= 0) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid amount" });
+    }
+
+    const numAmount = parseFloat(amount);
+    const minWithdrawal = 100;
+    if (numAmount < minWithdrawal) {
+      return res.status(400).json({
+        success: false,
+        message: `Minimum withdrawal is ₹${minWithdrawal}`,
+      });
+    }
+
+    const validMethods = ["bank", "upi", "razorpay"];
+    if (!validMethods.includes(method)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid withdrawal method" });
+    }
+
+    const user = await User.findById(userId);
+    if (!user)
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+
+    const wallet = await Wallet.findOne({ user_id: userId });
+    if (!wallet || wallet.balance < numAmount) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Insufficient balance" });
+    }
+
+    const fee = calculateFee(method, numAmount);
+    const totalDeduction = numAmount + fee;
+
+    if (wallet.balance < totalDeduction) {
+      return res.status(400).json({
+        success: false,
+        message: `Insufficient balance to cover withdrawal + ₹${fee} fee`,
+      });
+    }
+
+    // --- RAZORPAY PAYOUT LOGIC ---
+    let payoutStatus = "processed"; // Default for simulation
+    let razorpayPayoutId = "PO_" + Date.now().toString(36).toUpperCase();
+
+    // In a real production app with Razorpay Payouts enabled:
+    /*
+    const Razorpay = require("razorpay");
+    const razorpay = new Razorpay({
+      key_id: process.env.RAZORPAY_KEY_ID,
+      key_secret: process.env.RAZORPAY_KEY_SECRET,
+    });
+    
+    // Choose mode based on amount: IMPS (default), NEFT (>2L), or RTGS (>2L)
+    let transferMode = "IMPS";
+    if (numAmount > 200000) {
+      transferMode = "NEFT"; // Or RTGS based on business logic
+    }
+
+    try {
+      const payout = await razorpay.payouts.create({
+        account_number: process.env.RAZORPAY_ACCOUNT_NUMBER, // Merchant account
+        amount: Math.round(numAmount * 100),
+        currency: "INR",
+        mode: method === 'upi' ? 'UPI' : transferMode,
+        purpose: "payout",
+        fund_account: {
+          account_type: method === 'upi' ? 'vpa' : 'bank_account',
+          vpa: method === 'upi' ? { address: destination } : undefined,
+          bank_account: method === 'bank' ? {
+            name: account_name || user.full_name,
+            ifsc: ifsc || "HDFC0000001",
+            account_number: destination
+          } : undefined,
+          contact: {
+            name: user.full_name,
+            email: user.email,
+            contact: phone || user.mobile || "9999999999",
+            type: "customer"
+          }
+        },
+        queue_if_low_balance: true,
+        reference_id: "WDR_" + Date.now().toString(36).toUpperCase(),
+      });
+      
+      payoutStatus = payout.status; // 'processed', 'pending', 'reversed', etc.
+      razorpayPayoutId = payout.id;
+    } catch (error) {
+       console.error("Razorpay Payout Error:", error);
+       return res.status(400).json({ 
+         success: false, 
+         message: "Razorpay payout failed",
+         error: error.description 
+       });
+    }
+    */
+    // --- RAZORPAY PAYOUT LOGIC END ---
+
+    const balanceBefore = wallet.balance;
+    const balanceAfter = balanceBefore - totalDeduction;
+
+    wallet.balance = balanceAfter;
+
+    const txnId = "WDR" + Date.now().toString(36).toUpperCase();
+
+    const withdrawalTxn = new Transaction({
+      user_id: userId,
+      type: "debit",
+      flow: "withdrawal",
+      amount: numAmount,
+      fee,
+      balance_before: balanceBefore,
+      balance_after: balanceAfter,
+      category: "Withdrawal",
+      title: "Money Withdrawn",
+      description: `Withdrawn ₹${numAmount} to ${method.toUpperCase()} (${destination}) via Razorpay`,
+      status: payoutStatus === "processed" ? "success" : "pending",
+      payment_method: method === "bank" ? "netbanking" : method,
+      transaction_id: txnId,
+      razorpay_payout_id: razorpayPayoutId,
+    });
+
+    const notif = {
+      _id: new (require("mongoose").Types.ObjectId)(),
+      title: "Withdrawal Successful",
+      message: `₹${numAmount.toLocaleString()} has been withdrawn to your ${method.toUpperCase()}. Reference: ${txnId}`,
+      type: "info",
+      read: false,
+      time: new Date().toISOString(),
+      createdAt: new Date(),
+    };
+
+    await Promise.all([
+      wallet.save(),
+      withdrawalTxn.save(),
+      User.updateOne(
+        { _id: userId },
+        { $push: { notifications: { $each: [notif], $position: 0 } } },
+      ),
+      redis
+        .del(`dashboard:${userId}`)
+        .catch((e) => console.warn("Redis Clear Warning:", e.message)),
+    ]);
+
+    res.json({
+      success: true,
+      message: "Withdrawal processed successfully",
+      balance: wallet.balance,
+      transaction_id: txnId,
+      amount: numAmount,
+      destination,
+    });
+  } catch (err) {
+    console.error("Withdrawal Error:", err);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+// ─── GET TRANSACTIONS ────────────────────────────────────────────────────────
 exports.getTransactions = async (req, res) => {
   try {
     const userId = req.userId;
@@ -487,18 +618,15 @@ exports.getTransactions = async (req, res) => {
   }
 };
 
-/**
- * ================ GET NOTIFICATIONS =================
- */
+// ─── GET NOTIFICATIONS ───────────────────────────────────────────────────────
 exports.getNotifications = async (req, res) => {
   try {
     const userId = req.userId;
     const user = await User.findById(userId).select("notifications").lean();
-    if (!user) {
+    if (!user)
       return res
         .status(404)
         .json({ success: false, message: "User not found" });
-    }
 
     const notifications = user.notifications || [];
     const unread = notifications.filter((n) => !n.read).length;
@@ -512,34 +640,27 @@ exports.getNotifications = async (req, res) => {
   }
 };
 
-/**
- * ================ MARK NOTIFICATION READ =================
- */
+// ─── MARK NOTIFICATION READ ──────────────────────────────────────────────────
 exports.markNotificationRead = async (req, res) => {
   try {
     const userId = req.userId;
     const { notificationId } = req.params;
 
-    const user = await User.findById(userId);
-    if (!user) {
-      return res
-        .status(404)
-        .json({ success: false, message: "User not found" });
-    }
+    // ✅ FIX: updateOne + $set — no user.save(), no pre-save hook
+    const result = await User.updateOne(
+      { _id: userId, "notifications._id": notificationId },
+      { $set: { "notifications.$.read": true } },
+    );
 
-    const notification = user.notifications.id(notificationId);
-    if (!notification) {
+    if (result.matchedCount === 0) {
       return res
         .status(404)
         .json({ success: false, message: "Notification not found" });
     }
 
-    notification.read = true;
-    await user.save();
-
     try {
       await redis.del(`dashboard:${userId}`);
-    } catch (err) {
+    } catch {
       /* silent */
     }
 
@@ -552,45 +673,175 @@ exports.markNotificationRead = async (req, res) => {
   }
 };
 
-/**
- * ============ WELCOME NOTIFICATION =============
- */
-exports.sendWelcomeNotification = async (userId) => {
+// ─── WELCOME NOTIFICATION ────────────────────────────────────────────────────
+exports.sendWelcomeNotification = async (userId, userName, referralCode) => {
   try {
-    const user = await User.findById(userId);
-    if (!user) return;
-
-    if (!user.notifications) user.notifications = [];
-
-    user.notifications.push(
+    const notifs = [
       {
+        _id: new (require("mongoose").Types.ObjectId)(),
         title: "Welcome to FacePay!",
-        message: `Hi ${user.full_name}! Your account has been created successfully. Start by adding money to your wallet!`,
+        message: `Hi ${userName}! Your account has been created successfully. Start by adding money to your wallet!`,
         type: "success",
         read: false,
+        time: new Date().toISOString(),
+        createdAt: new Date(),
       },
       {
+        _id: new (require("mongoose").Types.ObjectId)(),
         title: "Complete KYC Verification",
         message:
           "Verify your account to unlock all features and higher transaction limits.",
         type: "info",
         read: false,
+        time: new Date().toISOString(),
+        createdAt: new Date(),
       },
-    );
+    ];
 
-    if (user.referral_code) {
-      user.notifications.push({
+    if (referralCode) {
+      notifs.push({
+        _id: new (require("mongoose").Types.ObjectId)(),
         title: "Refer & Earn Rewards",
-        message: `Your referral code: ${user.referral_code}. Share with friends to earn rewards!`,
+        message: `Your referral code: ${referralCode}. Share with friends to earn rewards!`,
         type: "info",
         read: false,
+        time: new Date().toISOString(),
+        createdAt: new Date(),
       });
     }
 
-    if (user.notifications.length > 50)
-      user.notifications = user.notifications.slice(-50);
-    await user.save();
+    // ✅ updateOne — no pre-save hook triggered
+    await User.updateOne(
+      { _id: userId },
+      { $push: { notifications: { $each: notifs } } },
+    );
   } catch (error) {
-    console.error("❌ Welcome notification error:", error);
+    console.error("❌ Welcome notification error:", error.message);
+  }
+};
+
+// ─── SEARCH USERS FOR REQUEST MONEY ──────────────────────────────────────────
+exports.getSearchUsers = async (req, res) => {
+  try {
+    const userId = req.userId;
+    const { query } = req.query;
+
+    if (!query || query.length < 2) {
+      return res.json({ success: true, users: [] });
+    }
+
+    const { decrypt } = require("../utils/crypto");
+    const fuzzy = new RegExp(query, "i");
+
+    // Fetch potential matches
+    const users = await User.find({
+      _id: { $ne: userId },
+      $or: [{ full_name: fuzzy }, { upi_id: fuzzy }],
+    })
+      .select("full_name email mobile profile_picture upi_id")
+      .limit(10)
+      .lean();
+
+    // Mapping to safe output
+    const safeUsers = users.map((u) => ({
+      id: u._id,
+      name: u.full_name,
+      upi_id:
+        u.upi_id || `${u.full_name.toLowerCase().replace(/\s/g, "")}@facepay`,
+      profile_picture: u.profile_picture,
+    }));
+
+    res.json({ success: true, users: safeUsers });
+  } catch (error) {
+    console.error("❌ Search users error:", error);
+    res.status(500).json({ success: false, message: "Search failed" });
+  }
+};
+
+// ─── REQUEST MONEY ──────────────────────────────────────────────────────────
+exports.requestMoney = async (req, res) => {
+  try {
+    const senderId = req.userId; // The one asking for money
+    const { recipientId, amount, note } = req.body;
+
+    if (!recipientId || !amount || amount <= 0) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid request" });
+    }
+
+    const [sender, recipient] = await Promise.all([
+      User.findById(senderId).select("full_name").lean(),
+      User.findById(recipientId).select("notifications").lean(),
+    ]);
+
+    if (!sender || !recipient) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+    }
+
+    const requestId = "REQ" + Date.now().toString(36).toUpperCase();
+
+    // Create Notification for the Recipient
+    const notification = {
+      _id: new (require("mongoose").Types.ObjectId)(),
+      title: "Money Request Received",
+      message: `${sender.full_name} is requesting ₹${amount} from you.`,
+      type: "payment_request",
+      amount: parseFloat(amount),
+      senderId,
+      senderName: sender.full_name,
+      requestId,
+      note: note || "",
+      read: false,
+      time: new Date().toISOString(),
+      createdAt: new Date(),
+    };
+
+    // Store in Transaction as PENDING
+    const transaction = new Transaction({
+      user_id: recipientId, // The one who HAS to pay
+      type: "debit",
+      flow: "request",
+      amount: parseFloat(amount),
+      balance_before: 0,
+      balance_after: 0,
+      status: "pending",
+      category: "Transfer",
+      title: `Request from ${sender.full_name}`,
+      description: note || "Money request",
+      transaction_id: requestId,
+    });
+
+    await Promise.all([
+      User.updateOne(
+        { _id: recipientId },
+        { $push: { notifications: { $each: [notification], $position: 0 } } },
+      ),
+      transaction.save(),
+      redis.del(`dashboard:${recipientId}`).catch(() => {}), // Clear cache
+    ]);
+
+    // REAL-TIME NOTIFICATION via WebSocket
+    const recipientConns = req.clients ? req.clients.get(recipientId) : null;
+    if (recipientConns) {
+      const liveNotif = JSON.stringify({
+        type: "NOTIFICATION",
+        data: notification,
+      });
+      recipientConns.forEach((ws) => {
+        if (ws.readyState === 1) ws.send(liveNotif);
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Request sent successfully",
+      requestId,
+    });
+  } catch (error) {
+    console.error("❌ Request money error:", error);
+    res.status(500).json({ success: false, message: "Request failed" });
   }
 };

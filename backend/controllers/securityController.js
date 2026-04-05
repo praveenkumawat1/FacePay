@@ -7,6 +7,7 @@ const ActivityLog = require("../models/ActivityLog");
 const ConnectedAccount = require("../models/ConnectedAccount");
 const User = require("../models/User");
 const { getDeviceInfo, logActivity } = require("../middleware/security");
+const { sendNotification } = require("../utils/notification");
 
 // Helper to generate backup codes (plain)
 const generateBackupCodes = (count = 8) => {
@@ -223,7 +224,15 @@ exports.verify2FA = async (req, res) => {
     user.backupCodes = plainCodes; // will be encrypted in pre-save
     await user.save();
 
-    logActivity(req.userId, "2FA Enabled", "success", req).catch(console.error);
+    await Promise.all([
+      logActivity(req.userId, "2FA Enabled", "success", req),
+      sendNotification(req.userId, {
+        title: "2FA Protection Active 🛡️",
+        message:
+          "Two-factor authentication is now enabled. Your account is significantly more secure.",
+        type: "success",
+      }),
+    ]).catch(console.error);
 
     res.json({ success: true, backupCodes: plainCodes });
   } catch (error) {

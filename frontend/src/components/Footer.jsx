@@ -100,7 +100,7 @@ const ContactSection = () => {
               initial="hidden"
               whileInView="visible"
               viewport={{ once: true }}
-              className="space-y-6 bg-white border-2 border-slate-900 p-8 md:p-12 rounded-[2rem] shadow-[12px_12px_0px_0px_rgba(79,70,229,1)]"
+              className="space-y-6 bg-white border-2 border-slate-900 p-8 md:p-12 rounded-4xl shadow-[12px_12px_0px_0px_rgba(79,70,229,1)]"
             >
               <div>
                 <label className="text-xs font-black uppercase tracking-widest text-slate-900 mb-3 block">

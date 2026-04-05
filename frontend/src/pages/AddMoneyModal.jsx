@@ -1,6 +1,6 @@
 import { FiPlus, FiX, FiInfo } from "react-icons/fi";
 import { motion, AnimatePresence } from "framer-motion";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 const ADD_MONEY_PRESETS = [100, 500, 1000, 2000];
 const ADD_MONEY_FEE = 2;
@@ -12,6 +12,16 @@ export default function AddMoneyModal({ open, onClose, onAdd }) {
   const [amount, setAmount] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  // 🔥 Dynamically load Razorpay script only when modal is open
+  useEffect(() => {
+    if (open && !window.Razorpay) {
+      const script = document.createElement("script");
+      script.src = "https://checkout.razorpay.com/v1/checkout.js";
+      script.async = true;
+      document.body.appendChild(script);
+    }
+  }, [open]);
 
   const netAmount = amount ? Math.max(Number(amount) - ADD_MONEY_FEE, 0) : 0;
 
@@ -37,22 +47,23 @@ export default function AddMoneyModal({ open, onClose, onAdd }) {
       });
       const data = await res.json();
 
-      if (!data.success || !data.order) {
+      if (!data.success || (!data.order && !data.order_id)) {
         setError(data.message || "Failed to create payment order");
         setLoading(false);
         return;
       }
 
-      const order = data.order;
+      const orderId = data.order_id || data.order?.id;
+      const orderAmount = data.amount_in_paise || data.order?.amount;
 
       // 2. Open Razorpay Checkout
       const options = {
-        key: RAZORPAY_KEY_ID,
-        amount: order.amount,
-        currency: order.currency,
+        key: data.key_id || RAZORPAY_KEY_ID,
+        amount: orderAmount,
+        currency: data.currency || "INR",
         name: "FacePay",
         description: "Add Money to Wallet",
-        order_id: order.id,
+        order_id: orderId,
         handler: async function (response) {
           setLoading(true);
           setError("");

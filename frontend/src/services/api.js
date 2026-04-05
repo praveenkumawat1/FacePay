@@ -1,7 +1,8 @@
 const API_URL = "http://localhost:5000/api";
 
 /**
- * Register user with face enrollment
+ * Register user only (NO face enrollment here)
+ * Face enrollment is handled separately by awsService.enrollFace
  */
 export const registerUser = async (formData) => {
   try {
@@ -20,7 +21,6 @@ export const registerUser = async (formData) => {
         : "MISSING ❌",
     });
 
-    // ✅ VALIDATION
     if (!formData.faceImage) {
       console.error("❌ Face image is missing!");
       throw new Error("Face image is missing");
@@ -37,7 +37,8 @@ export const registerUser = async (formData) => {
     console.log("✅ Face image validated");
 
     // ============================================
-    // STEP 1: REGISTER USER
+    // STEP 1: REGISTER USER ONLY
+    // Face enrollment is done separately via awsService
     // ============================================
     console.log("📝 Step 1: Registering user...");
 
@@ -51,6 +52,7 @@ export const registerUser = async (formData) => {
     data.append("account_holder_name", formData.accountHolderName || "");
     data.append("account_number", formData.accountNumber || "");
     data.append("ifsc", formData.ifsc || "");
+    // Face image sent to register endpoint too (optional, for record)
     data.append("face_image", formData.faceImage, formData.faceImage.name);
 
     console.log("🚀 Sending POST request to:", `${API_URL}/auth/register`);
@@ -81,58 +83,9 @@ export const registerUser = async (formData) => {
       throw new Error("Registration succeeded but no user ID returned");
     }
 
-    const userId = registerResult.user._id;
-    console.log("✅ User registered with ID:", userId);
+    console.log("✅ User registered with ID:", registerResult.user._id);
 
-    // ============================================
-    // STEP 2: ENROLL FACE WITH AWS REKOGNITION
-    // ============================================
-    console.log("🔐 Step 2: Enrolling face with AWS Rekognition...");
-    console.log("User ID:", userId);
-    console.log("Face Image:", formData.faceImage.name);
-
-    const faceData = new FormData();
-    faceData.append("userId", userId);
-    faceData.append("faceImage", formData.faceImage, formData.faceImage.name);
-
-    console.log("🚀 Sending POST request to:", `${API_URL}/aws-face/enroll`);
-
-    let enrollResponse;
-    try {
-      enrollResponse = await fetch(`${API_URL}/aws-face/enroll`, {
-        method: "POST",
-        body: faceData,
-      });
-
-      console.log("📥 Enroll response status:", enrollResponse.status);
-
-      const enrollResult = await enrollResponse.json();
-      console.log("📥 Enroll response body:", enrollResult);
-
-      if (!enrollResponse.ok) {
-        console.warn("⚠️ Face enrollment failed but user already created");
-        console.warn("Error:", enrollResult.message);
-        console.warn("Status:", enrollResponse.status);
-      } else if (enrollResult.success) {
-        console.log("✅ Face enrolled successfully!");
-        console.log("Face ID:", enrollResult.data.faceId);
-        console.log("Confidence:", enrollResult.data.confidence);
-
-        // Add to result
-        registerResult.faceEnrolled = true;
-        registerResult.faceId = enrollResult.data.faceId;
-        registerResult.faceConfidence = enrollResult.data.confidence;
-      } else {
-        console.warn("⚠️ Enrollment returned success: false");
-        registerResult.faceEnrolled = false;
-      }
-    } catch (enrollError) {
-      console.error("❌ Exception during face enrollment:", enrollError);
-      registerResult.faceEnrolled = false;
-      registerResult.enrollmentError = enrollError.message;
-    }
-
-    console.log("🎉 Registration process completed!");
+    // Return just the register result — caller handles face enrollment
     return registerResult;
   } catch (error) {
     console.error("❌ Registration error:", error);
@@ -214,22 +167,16 @@ export const postKycStep = async (endpoint, data, token) => {
 };
 
 // ============================================
-// ✅ NEW: COUPONS & REWARDS API (ADDED WITHOUT ALTERING EXISTING CODE)
+// COUPONS & REWARDS API
 // ============================================
 
-/**
- * Get user's coupon dashboard (coins, streak, marketplace, coupons, referral code)
- * @param {string} token - JWT token (if not provided, it will be read from localStorage)
- */
 export const getCouponsDashboard = async (token) => {
   try {
     const authToken = token || localStorage.getItem("facepay_token");
     if (!authToken) throw new Error("No authentication token found");
 
     const response = await fetch(`${API_URL}/coupons/dashboard`, {
-      headers: {
-        Authorization: `Bearer ${authToken}`,
-      },
+      headers: { Authorization: `Bearer ${authToken}` },
     });
 
     const result = await response.json();
@@ -243,10 +190,6 @@ export const getCouponsDashboard = async (token) => {
   }
 };
 
-/**
- * Claim daily reward (increases streak and adds coins)
- * @param {string} token - JWT token
- */
 export const claimDailyReward = async (token) => {
   try {
     const authToken = token || localStorage.getItem("facepay_token");
@@ -271,11 +214,6 @@ export const claimDailyReward = async (token) => {
   }
 };
 
-/**
- * Redeem a marketplace item using coins
- * @param {string} itemId - ID of the item to redeem
- * @param {string} token - JWT token
- */
 export const redeemItem = async (itemId, token) => {
   try {
     const authToken = token || localStorage.getItem("facepay_token");
@@ -301,19 +239,13 @@ export const redeemItem = async (itemId, token) => {
   }
 };
 
-/**
- * Get user's referral code
- * @param {string} token - JWT token
- */
 export const getReferralCode = async (token) => {
   try {
     const authToken = token || localStorage.getItem("facepay_token");
     if (!authToken) throw new Error("No authentication token found");
 
     const response = await fetch(`${API_URL}/coupons/referral-code`, {
-      headers: {
-        Authorization: `Bearer ${authToken}`,
-      },
+      headers: { Authorization: `Bearer ${authToken}` },
     });
 
     const result = await response.json();
@@ -327,11 +259,6 @@ export const getReferralCode = async (token) => {
   }
 };
 
-/**
- * Apply a referral code when registering (or after registration)
- * @param {string} code - Referral code to apply
- * @param {string} token - JWT token
- */
 export const applyReferralCode = async (code, token) => {
   try {
     const authToken = token || localStorage.getItem("facepay_token");
@@ -357,7 +284,6 @@ export const applyReferralCode = async (code, token) => {
   }
 };
 
-// Original default export (unchanged)
 export default {
   get: getKycStatus,
   post: postKycStep,

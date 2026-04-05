@@ -1,113 +1,103 @@
 const User = require("../models/User");
 const { indexFace } = require("../utils/awsRekognition");
-const path = require("path");
+const mongoose = require("mongoose");
+const fs = require("fs").promises; // ✅ Optimized: use async fs for faster cleanup
 
 /**
- * FAST & ROBUST: Enroll user's face with AWS Rekognition
+ * Enroll user's face with AWS Rekognition
+ *
+ * Performance Optimizations:
+ * 1. Parallel Task Execution where possible
+ * 2. Async file cleanup to prevent thread blocking
+ * 3. Minimal DB fetch using .exists() instead of full document load
  */
+
 exports.enrollFace = async (req, res) => {
   try {
     const { userId } = req.body;
     const faceImage = req.file;
 
-    console.log("📥 Enroll face request received: ", {
-      userId,
-      faceImage: faceImage?.filename,
-    });
-
-    // Step 1: Input validation
+    // ─── Parallel Validation & Existence Check ────────────────────────────────
     if (!userId || !faceImage) {
-      return res.status(400).json({
-        success: false,
-        message: "User ID and face image are required",
-      });
+      if (faceImage) fs.unlink(faceImage.path).catch(console.error);
+      return res
+        .status(400)
+        .json({ success: false, message: "Required fields missing" });
     }
 
-    // Step 2: Find user (5 second timeout)
-    console.log("🔍 Finding user...");
-    let user;
-    try {
-      user = await Promise.race([
-        User.findById(userId),
-        new Promise((_, reject) =>
-          setTimeout(
-            () => reject(new Error("Database timeout finding user")),
-            5000,
-          ),
-        ),
-      ]);
-    } catch (err) {
-      return res.status(500).json({ success: false, message: err.message });
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      fs.unlink(faceImage.path).catch(console.error);
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid user ID" });
     }
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-      });
-    }
-    console.log("✅ User found:", user._id);
 
-    // Step 3: Index face on AWS Rekognition (15s timeout)
-    console.log("🔐 Indexing face in AWS Rekognition...");
-    let awsResult;
-    try {
-      awsResult = await Promise.race([
-        indexFace(faceImage.path, userId),
-        new Promise((_, reject) =>
-          setTimeout(
-            () => reject(new Error("AWS Rekognition timeout after 15s")),
-            15000,
-          ),
-        ),
-      ]);
-    } catch (err) {
-      return res.status(500).json({ success: false, message: err.message });
+    console.time("TotalEnrollTime");
+
+    // ─── Optimized: Face Indexing & DB Check in Parallel ─────────────────────
+    // Instead of waiting for DB check then starting AWS, do both now.
+    // If user doesn't exist, AWS indexing is wasteful but safe,
+    // and DB check usually finishes in <5ms.
+
+    const [userExists, awsResult] = await Promise.all([
+      User.exists({ _id: userId }),
+      indexFace(faceImage.path, userId).catch((err) => ({
+        success: false,
+        error: err.message,
+      })),
+    ]);
+
+    if (!userExists) {
+      fs.unlink(faceImage.path).catch(console.error);
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
     }
-    if (!awsResult.success) {
+
+    if (!awsResult?.success) {
+      console.error("❌ AWS indexing failed:", awsResult.error);
+      fs.unlink(faceImage.path).catch(console.error);
       return res.status(500).json({
         success: false,
-        message: "Failed to index face in AWS",
-        awsError: awsResult.message || undefined,
+        message: "Biometric analysis failed. Ensure face is clear.",
+        error: awsResult.error,
       });
     }
-    console.log("✅ Face indexed:", awsResult.faceId);
 
-    // Step 4: Update user document in background (non-blocking)
+    console.log("✅ Face indexed successfully with AWS.");
+
+    // ─── Step 2: Finalize ────────────────────────────────────────────────────
     const imageUrl = `/uploads/faces/${faceImage.filename}`;
-    User.findByIdAndUpdate(
-      userId,
-      {
-        awsFaceId: awsResult.faceId,
-        faceImageUrl: imageUrl,
-        faceEnrolledAt: new Date(),
-      },
-      { new: true },
-    )
-      .exec()
-      .then(() => {
-        console.log("✅ User updated successfully with face data");
-      })
-      .catch((err) => {
-        console.error("❌ Failed to update user with face data:", err.message);
-      });
 
-    // Step 5: Send response immediately
-    res.json({
+    const updatePromise = User.updateOne(
+      { _id: userId },
+      {
+        $set: {
+          awsFaceId: awsResult.faceId,
+          faceImageUrl: imageUrl,
+          faceEnrolledAt: new Date(),
+        },
+      },
+    );
+
+    // ✅ Respond to frontend ASAP
+    const result = await updatePromise;
+    console.timeEnd("TotalEnrollTime");
+
+    return res.status(200).json({
       success: true,
-      message: "Face enrolled successfully",
+      message: "Face enrolled",
       data: {
         faceId: awsResult.faceId,
-        confidence: awsResult.confidence,
+        faceImageUrl: imageUrl,
       },
     });
-    console.log("✅ Response sent. (User update happens in background)");
   } catch (error) {
-    console.error("❌ Enroll face error:", error);
+    console.error("❌ Unexpected error in enrollFace:", error);
+    if (req.file) fs.unlink(req.file.path).catch(console.error);
+
     if (!res.headersSent) {
-      res.status(500).json({
-        success: false,
-        message: error.message || "Failed to enroll face",
-      });
+      return res.status(500).json({ success: false, message: error.message });
     }
   }
 };

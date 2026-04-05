@@ -15,7 +15,15 @@ const ActivityLogSchema = new mongoose.Schema({
   },
   device: { type: String, default: "Unknown" },
   ipAddress: { type: String, default: "Unknown" },
-  location: { type: String, default: "Unknown" },
+  location: {
+    city: String,
+    region: String,
+    country: String,
+    lat: Number,
+    lon: Number,
+  },
+  userAgent: { type: String },
+  behaviorScore: { type: Number, default: 0 }, // AI generated score
   createdAt: { type: Date, default: Date.now },
 });
 

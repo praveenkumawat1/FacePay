@@ -201,6 +201,21 @@ const seed = async () => {
     await FeaturedOffer.insertMany(featuredOffers);
     console.log(`✅ Inserted ${featuredOffers.length} featured offers`);
 
+    // ========== UPDATE ALL USERS ==========
+    const User = require("../models/User");
+    const updateResult = await User.updateMany(
+      {},
+      {
+        $set: {
+          coins: 150,
+          scratchCardAvailable: true,
+        },
+      },
+    );
+    console.log(
+      `💰 Updated ${updateResult.modifiedCount} users with 150 coins and 1 scratch card`,
+    );
+
     console.log("🎉 Seeding completed successfully!");
     process.exit(0);
   } catch (error) {

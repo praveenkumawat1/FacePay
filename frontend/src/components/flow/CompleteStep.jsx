@@ -1,6 +1,11 @@
 import { motion } from "framer-motion";
 
 const CompleteStep = ({ closeModal }) => {
+  const handleDashboard = () => {
+    // 🔥 FORCE: Go to dashboard and refresh
+    window.location.href = "/dashboard";
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -53,7 +58,7 @@ const CompleteStep = ({ closeModal }) => {
         transition={{ delay: 0.8 }}
       >
         <button
-          onClick={closeModal}
+          onClick={handleDashboard}
           className="w-full max-w-sm mx-auto py-4 rounded-2xl bg-black text-white font-semibold text-lg 
                      hover:bg-gray-900 shadow-xl hover:shadow-2xl hover:-translate-y-1 
                      transition-all duration-300"

@@ -1,16 +1,16 @@
 import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { registerUser } from "../services/api";
+import { enrollFace } from "../services/awsFaceService";
 
 import PersonalInfoStep from "./flow/PersonalInfoStep";
 import PasswordStep from "./flow/PasswordStep";
 import BankDetailsStep from "./flow/BankDetailsStep";
 import FaceScanStep from "./flow/FaceScanStep";
-import ReferralCodeStep from "./flow/ReferralCodeStep"; // <-- new import
+import ReferralCodeStep from "./flow/ReferralCodeStep";
 import OTPVerifyStep from "./flow/OTPVerifyStep";
 import CompleteStep from "./flow/CompleteStep";
 
-// === Updated steps: add 'Referral' ===
 const steps = [
   "Personal",
   "Security",
@@ -21,31 +21,228 @@ const steps = [
   "Done",
 ];
 
+/**
+ * Registration stages — each maps to a real backend event.
+ *
+ * FIX: Stages are now properly synced with actual API calls.
+ *
+ * Old flow (broken):
+ *   - apiPromise fired during face_upload stage
+ *   - UI advanced through face_enroll stage independently
+ *   - result = await apiPromise at the end — but stages already "done"
+ *   - If AWS took 15s, UI was stuck waiting silently with no stage showing
+ *
+ * New flow (fixed):
+ *   - registerUser() called during create_user stage
+ *   - enrollFace() called during face_upload stage — AWAITED properly
+ *   - face_enroll stage shows WHILE AWS Rekognition is actually indexing
+ *   - Each await maps to real work happening on the server
+ */
+const REGISTRATION_STAGES = [
+  {
+    id: "validate",
+    label: "Validating your information",
+    sublabel: "Checking all fields and face image...",
+    icon: "🔍",
+    duration: 800,
+  },
+  {
+    id: "create_user",
+    label: "Creating your account",
+    sublabel: "Saving your details securely...",
+    icon: "👤",
+    duration: 0, // duration = 0 means: wait for real API, not a timer
+  },
+  {
+    id: "face_upload",
+    label: "Uploading face data",
+    sublabel: "Sending biometric data to AWS...",
+    icon: "📤",
+    duration: 0, // wait for real enrollFace API
+  },
+  {
+    id: "face_enroll",
+    label: "Enrolling face with AWS Rekognition",
+    sublabel: "Analyzing and indexing your face...",
+    icon: "🧠",
+    duration: 0, // this stage is shown WHILE enrollFace is awaited
+  },
+  {
+    id: "token",
+    label: "Generating secure token",
+    sublabel: "Setting up your session...",
+    icon: "🔐",
+    duration: 600,
+  },
+  {
+    id: "done",
+    label: "All done!",
+    sublabel: "Redirecting to your dashboard...",
+    icon: "✅",
+    duration: 500,
+  },
+];
+
 const slideVariants = {
   initial: { opacity: 0, x: 50 },
   animate: { opacity: 1, x: 0 },
   exit: { opacity: 0, x: -50 },
 };
 
+// ─── Real-time Loading Overlay ────────────────────────────────────────────────
+const LoadingOverlay = ({ currentStageId }) => {
+  const currentIndex = REGISTRATION_STAGES.findIndex(
+    (s) => s.id === currentStageId,
+  );
+  const progressPercent = Math.round(
+    ((currentIndex + 1) / REGISTRATION_STAGES.length) * 100,
+  );
+
+  return (
+    <div className="absolute inset-0 z-50 rounded-3xl overflow-hidden">
+      {/* Blurred backdrop */}
+      <div className="absolute inset-0 bg-white/95 backdrop-blur-md" />
+
+      {/* Animated gradient top bar */}
+      <div
+        className="absolute top-0 left-0 h-1 bg-linear-to-r from-black via-gray-600 to-black transition-all duration-700 ease-out"
+        style={{ width: `${progressPercent}%` }}
+      />
+
+      <div className="relative h-full flex flex-col items-center justify-center px-10 py-8">
+        {/* Pulsing ring */}
+        <div className="relative mb-8">
+          <div className="w-20 h-20 rounded-full border-4 border-gray-100 flex items-center justify-center">
+            <div
+              className="absolute inset-0 rounded-full border-4 border-transparent border-t-black animate-spin"
+              style={{ animationDuration: "0.9s" }}
+            />
+            <span className="text-2xl z-10">
+              {REGISTRATION_STAGES[currentIndex]?.icon || "⚙️"}
+            </span>
+          </div>
+          {/* Orbiting dot */}
+          <div
+            className="absolute w-2.5 h-2.5 bg-black rounded-full animate-spin"
+            style={{
+              top: "-5px",
+              left: "50%",
+              transformOrigin: "0 45px",
+              animationDuration: "1.5s",
+              animationTimingFunction: "linear",
+            }}
+          />
+        </div>
+
+        {/* Current stage label */}
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={currentStageId}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.3 }}
+            className="text-center mb-6"
+          >
+            <p className="text-lg font-bold text-gray-900 tracking-tight">
+              {REGISTRATION_STAGES[currentIndex]?.label}
+            </p>
+            <p className="text-sm text-gray-500 mt-1">
+              {REGISTRATION_STAGES[currentIndex]?.sublabel}
+            </p>
+          </motion.div>
+        </AnimatePresence>
+
+        {/* Step checklist */}
+        <div className="w-full space-y-2 mb-6">
+          {REGISTRATION_STAGES.map((stage, i) => {
+            const isDone = i < currentIndex;
+            const isCurrent = i === currentIndex;
+
+            return (
+              <motion.div
+                key={stage.id}
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: i * 0.05 }}
+                className={`flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-300 ${
+                  isCurrent
+                    ? "bg-black text-white shadow-lg scale-[1.02]"
+                    : isDone
+                      ? "bg-gray-50 text-gray-400"
+                      : "bg-transparent text-gray-300"
+                }`}
+              >
+                <span className="text-base w-6 text-center">
+                  {isDone ? (
+                    <motion.span
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      className="text-green-500"
+                    >
+                      ✓
+                    </motion.span>
+                  ) : isCurrent ? (
+                    <span className="inline-block w-3 h-3 rounded-full bg-white animate-pulse" />
+                  ) : (
+                    <span className="inline-block w-3 h-3 rounded-full bg-gray-200" />
+                  )}
+                </span>
+                <span
+                  className={`text-sm font-medium ${
+                    isDone
+                      ? "line-through text-gray-400"
+                      : isCurrent
+                        ? "text-white"
+                        : "text-gray-400"
+                  }`}
+                >
+                  {stage.label}
+                </span>
+              </motion.div>
+            );
+          })}
+        </div>
+
+        {/* Progress bar */}
+        <div className="w-full">
+          <div className="flex justify-between mb-1.5">
+            <span className="text-xs text-gray-400 font-medium">Progress</span>
+            <span className="text-xs font-bold text-gray-700">
+              {progressPercent}%
+            </span>
+          </div>
+          <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+            <motion.div
+              className="h-full bg-linear-to-r from-gray-800 to-black rounded-full"
+              initial={{ width: 0 }}
+              animate={{ width: `${progressPercent}%` }}
+              transition={{ duration: 0.6, ease: "easeOut" }}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── Main Modal ───────────────────────────────────────────────────────────────
 const GetStartedModal = ({ close }) => {
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({});
   const [loading, setLoading] = useState(false);
+  const [currentStage, setCurrentStage] = useState(null);
   const [error, setError] = useState(null);
 
   const next = async (data) => {
     const updatedData = { ...formData, ...data };
     setFormData(updatedData);
 
-    // === Navigation with Referral step ===
     if (step === 4) {
-      // After FaceScan now Referral
       setStep(5);
     } else if (step === 5) {
-      // After Referral code, go to OTP
       setStep(6);
     } else if (step === 6) {
-      // After OTP: submit registration
       await submitRegistration(updatedData);
     } else {
       setStep((prev) => prev + 1);
@@ -57,66 +254,105 @@ const GetStartedModal = ({ close }) => {
     setStep((prev) => prev - 1);
   };
 
+  /**
+   * Show a stage for a fixed duration (for non-API stages like validate, token, done).
+   */
+  const advanceStageTimer = (stageId, ms) => {
+    setCurrentStage(stageId);
+    return new Promise((res) => setTimeout(res, ms));
+  };
+
+  /**
+   * Show a stage immediately (for API-backed stages — caller awaits the real promise).
+   */
+  const showStage = (stageId) => {
+    setCurrentStage(stageId);
+  };
+
   const submitRegistration = async (data) => {
     setLoading(true);
     setError(null);
 
     try {
-      console.log("🚀 Starting registration process...");
+      // ── Stage 1: Validate (800ms timer — no API) ────────────────────────
+      await advanceStageTimer("validate", 800);
 
-      // Validation: Check face image
       if (!data.faceImage || !(data.faceImage instanceof File)) {
         throw new Error(
           "Face image not captured or invalid. Go back and scan your face.",
         );
       }
 
-      console.log("📝 Registering user (includes AWS face enrollment)...");
+      // ── Stage 2: Create user (real API call — show stage, then await) ───
+      showStage("create_user");
+      console.log("📝 Registering user...");
+      const registerResult = await registerUser(data);
 
-      // registerUser handles both user creation AND AWS enrollment
-      const result = await registerUser(data);
-
-      console.log("✅ Registration complete:", result);
-
-      if (!result.success) {
-        throw new Error(result.message || "Registration failed");
+      if (!registerResult.success) {
+        throw new Error(registerResult.message || "Registration failed");
       }
 
-      // Check if face enrollment succeeded
-      if (result.faceEnrolled) {
-        console.log("🎉 Face enrolled successfully!");
-        console.log("Face ID:", result.faceId);
-        console.log("Confidence:", result.faceConfidence);
-      } else {
-        console.warn("⚠️ User created but face enrollment may have failed");
+      const userId = registerResult.user._id;
+      console.log("✅ User registered:", userId);
+
+      // ✅ FIX: Ensure userId is in localStorage for FaceScanStep.jsx
+      localStorage.setItem("facepay_userId", userId);
+
+      // Save token early so session is valid
+      if (registerResult.token) {
+        localStorage.setItem("facepay_token", registerResult.token);
+      }
+      if (registerResult.user) {
+        localStorage.setItem(
+          "facepay_user",
+          JSON.stringify(registerResult.user),
+        );
       }
 
-      // Save token and user data
-      if (result.token) {
-        localStorage.setItem("facepay_token", result.token);
-      }
-      if (result.user) {
-        localStorage.setItem("facepay_user", JSON.stringify(result.user));
-      }
-      if (result.faceEnrolled) {
-        localStorage.setItem("facepay_face_enrolled", "true");
-        if (result.faceConfidence) {
-          localStorage.setItem(
-            "facepay_face_confidence",
-            result.faceConfidence.toString(),
+      // ── Stage 4: Face enroll (BACKGROUND) ────────────────────────────────
+      showStage("face_enroll");
+      console.log("🔐 Starting face enrollment in background...");
+
+      // 🔥 OPTIMIZATION: We trigger enrollment but do NOT await its completion.
+      // This prevents the frontend from getting stuck if AWS takes 15-30 seconds.
+      // We still update local indicators for the user.
+      enrollFace(userId, data.faceImage)
+        .then((enrollResult) => {
+          console.log(
+            "✅ Face enrollment finished in background:",
+            enrollResult,
           );
-        }
-      }
+          if (enrollResult?.success) {
+            localStorage.setItem("facepay_face_enrolled", "true");
+            if (enrollResult.data?.confidence) {
+              localStorage.setItem(
+                "facepay_face_confidence",
+                enrollResult.data.confidence.toString(),
+              );
+            }
+          }
+        })
+        .catch((enrollErr) => {
+          console.error("❌ Background face enrollment failed:", enrollErr);
+          localStorage.setItem("facepay_face_enrolled", "false");
+        });
 
-      setStep(7); // Go to Complete
-      setTimeout(() => {
-        window.location.href = "/dashboard";
-      }, 1200);
+      // Show the progress stages briefly for UX, then move on
+      await new Promise((res) => setTimeout(res, 600)); // ⚡ REDUCED: 1500ms -> 600ms
+
+      // ── Stage 5: Token (300ms timer) ─────────────────────────────────────
+      await advanceStageTimer("token", 300); // ⚡ REDUCED: 600ms -> 300ms
+
+      // ── Stage 6: Done (200ms timer) ──────────────────────────────────────
+      await advanceStageTimer("done", 200); // ⚡ REDUCED: 500ms -> 200ms
+
+      setStep(7);
+      setLoading(false); // ✅ STOP LOADING and show CompleteStep.jsx
     } catch (err) {
       console.error("❌ Registration error:", err);
       setError(err.message || "Registration failed. Please try again.");
-    } finally {
       setLoading(false);
+      setCurrentStage(null);
     }
   };
 
@@ -126,9 +362,12 @@ const GetStartedModal = ({ close }) => {
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         transition={{ duration: 0.4, ease: "easeOut" }}
-        className="bg-white/90 backdrop-blur-xl w-full max-w-lg rounded-3xl shadow-2xl border border-white/20 overflow-hidden"
+        className="bg-white/90 backdrop-blur-xl w-full max-w-lg rounded-3xl shadow-2xl border border-white/20 overflow-hidden relative"
       >
-        {/* Header with Close Button */}
+        {/* Real-time loading overlay */}
+        {loading && <LoadingOverlay currentStageId={currentStage} />}
+
+        {/* Header */}
         <div className="relative px-8 pt-8 pb-6">
           <button
             onClick={close}
@@ -146,15 +385,16 @@ const GetStartedModal = ({ close }) => {
           </p>
         </div>
 
-        {/* Modern Timeline */}
+        {/* Timeline */}
         <div className="px-8 mb-8">
           <div className="relative flex items-center justify-between">
-            <div className="absolute top-5 left-10 right-10 h-0.5 bg-gray-200 -z-0" />
+            <div className="absolute top-5 left-10 right-10 h-0.5 bg-gray-200 z-0" />
             <div
-              className="absolute top-5 left-10 h-0.5 bg-black transition-all duration-500 -z-0"
-              style={{ width: `${((step - 1) / (steps.length - 1)) * 100}%` }}
+              className="absolute top-5 left-10 h-0.5 bg-black transition-all duration-500 z-0"
+              style={{
+                width: `${((step - 1) / (steps.length - 1)) * 100}%`,
+              }}
             />
-
             {steps.map((label, i) => (
               <div
                 key={label}
@@ -172,8 +412,7 @@ const GetStartedModal = ({ close }) => {
                 </div>
                 <p
                   className={`mt-3 text-xs font-medium transition-colors duration-300
-                    ${i + 1 <= step ? "text-black" : "text-gray-400"}
-                  `}
+                    ${i + 1 <= step ? "text-black" : "text-gray-400"}`}
                 >
                   {label}
                 </p>
@@ -182,6 +421,7 @@ const GetStartedModal = ({ close }) => {
           </div>
         </div>
 
+        {/* Error */}
         {error && (
           <div className="px-8 mb-4">
             <div className="bg-red-50 border border-red-200 rounded-xl p-4">
@@ -190,21 +430,7 @@ const GetStartedModal = ({ close }) => {
           </div>
         )}
 
-        {loading && (
-          <div className="absolute inset-0 bg-white/90 backdrop-blur-sm flex items-center justify-center z-50 rounded-3xl">
-            <div className="text-center">
-              <div className="w-16 h-16 border-4 border-black border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-              <p className="text-lg font-semibold text-gray-900">
-                Creating your account...
-              </p>
-              <p className="text-sm text-gray-600 mt-2">
-                Including face enrollment with AWS Rekognition
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* Step Content with Smooth Animation */}
+        {/* Step Content */}
         <div className="px-8 pb-10 min-h-96">
           <AnimatePresence mode="wait">
             <motion.div

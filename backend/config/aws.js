@@ -5,16 +5,16 @@ require("dotenv").config();
 AWS.config.update({
   accessKeyId: process.env.AWS_ACCESS_KEY_ID,
   secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-  region: process.env.AWS_REGION || "ap-south-1", // ⚡ Mumbai, India
+  region: process.env.AWS_REGION || "ap-south-1", //  Mumbai, India (ensure this is closest)
 
-  // ⚡ HTTP optimization
+  //  HTTP optimization
   httpOptions: {
-    timeout: 15000, // 15 second timeout
-    connectTimeout: 5000, // 5 second connection timeout
+    timeout: 30000, // ⚡ INCREASED: 30 second timeout for processing
+    connectTimeout: 10000, // ⚡ INCREASED: 10 second connection timeout
   },
 
-  // ⚡ Retry configuration
-  maxRetries: 2,
+  //  Retry configuration (reduced for speed)
+  maxRetries: 1,
   retryDelayOptions: {
     base: 300,
   },
