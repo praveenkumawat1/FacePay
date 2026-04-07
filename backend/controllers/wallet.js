@@ -83,6 +83,9 @@ exports.sendMoney = async (req, res) => {
       receiverWallet = receiverWallet[0];
     }
 
+    // Fetch sender details for receiver's notification
+    const sender = await User.findById(senderId).session(session);
+
     // Update balances
     senderWallet.balance -= amount;
     await senderWallet.save({ session });
@@ -95,7 +98,7 @@ exports.sendMoney = async (req, res) => {
     const receiverTxnId = generateTransactionId();
 
     // Sender's transaction (debit)
-    await Transaction.create(
+    const senderTxn = await Transaction.create(
       [
         {
           user_id: senderId,
@@ -105,11 +108,12 @@ exports.sendMoney = async (req, res) => {
           balance_before: senderWallet.balance + amount,
           balance_after: senderWallet.balance,
           category: category || "Transfer",
-          title: `Sent to ${recipient}`,
-          description: note || "",
+          title: `Sent to ${receiver.full_name}`,
+          description:
+            note || `Flash Pay to ${receiver.upi_id || receiver.mobile}`,
           note: note || "",
           counterparty_id: receiver._id,
-          recipient: recipient,
+          recipient: receiver.full_name,
           status: "success",
           transaction_id: senderTxnId,
         },
@@ -128,11 +132,12 @@ exports.sendMoney = async (req, res) => {
           balance_before: receiverWallet.balance - amount,
           balance_after: receiverWallet.balance,
           category: category || "Transfer",
-          title: `Received from ${senderWallet.user_id}`, // optionally fetch sender's name
-          description: note || "",
+          title: `Received from ${sender.full_name}`,
+          description:
+            note || `Flash Pay from ${sender.upi_id || sender.mobile}`,
           note: note || "",
           counterparty_id: senderId,
-          recipient: recipient, // optional
+          recipient: sender.full_name,
           status: "success",
           transaction_id: receiverTxnId,
         },
@@ -140,11 +145,25 @@ exports.sendMoney = async (req, res) => {
       { session },
     );
 
-    // Optionally add notification to receiver
+    // Create a Coupon if amount > 100 (Bonus logic)
+    let generatedCoupon = null;
+    if (amount >= 100) {
+      const couponCode =
+        "FLASH" + Math.random().toString(36).substr(2, 5).toUpperCase();
+      // Assuming a Coupon model exists or we just return it for UI
+      generatedCoupon = {
+        code: couponCode,
+        discount: "10%",
+        message: "Flash Pay Bonus",
+      };
+    }
+
+    // Add notification to receiver
+    // Note: Checking if notifications array exists on receiver
     if (receiver.notifications) {
       receiver.notifications.push({
-        title: "Money Received",
-        message: `₹${amount} received from ${senderWallet.user_id}`,
+        title: "⚡ Flash Received",
+        message: `₹${amount} received from ${sender.full_name}`,
         type: "success",
         read: false,
         time: new Date().toISOString(),
@@ -155,22 +174,25 @@ exports.sendMoney = async (req, res) => {
     await session.commitTransaction();
     session.endSession();
 
-    // Return the sender's transaction to frontend
+    // Return the sender's transaction to frontend with enhanced data
     const newTransaction = {
-      _id: senderTxnId,
+      id: senderTxnId,
       type: "send",
       category: category || "Transfer",
-      name: recipient,
+      recipient: {
+        name: receiver.full_name,
+        upi: receiver.upi_id,
+      },
       amount,
       time: new Date(),
-      details: note || "",
-      transactionId: senderTxnId,
+      note: note || "",
+      coupon: generatedCoupon,
     };
 
     res.json({
       success: true,
       transaction: newTransaction,
-      message: "Money sent successfully",
+      message: "Flash Payment Successful",
     });
   } catch (error) {
     await session.abortTransaction();

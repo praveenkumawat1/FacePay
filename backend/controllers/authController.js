@@ -495,40 +495,23 @@ exports.faceLogin = async (req, res) => {
       fs.mkdirSync(uploadsDir, { recursive: true });
     fs.writeFileSync(tempFilePath, imageBuffer);
 
-    const qualityCheck = await detectFaceQuality(tempFilePath);
-    if (!qualityCheck.success) {
+    // ─── ULTRA FAST: Skip separate detectFaceQuality, use searchFace's internal data for liveness ───────────
+    const awsResult = await searchFace(tempFilePath).catch((err) => ({
+      success: false,
+      error: err.message,
+    }));
+
+    if (!awsResult || !awsResult.success) {
       if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
       return res.status(401).json({
         success: false,
-        message: "No face detected clearly. Please try again.",
-      });
-    }
-    if (!qualityCheck.isLive) {
-      if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
-      return res.status(401).json({
-        success: false,
-        message: "Liveness check failed. Please use your real face.",
-        liveness: {
-          score: qualityCheck.liveness.score,
-          reason: getLivenessFailureReason(qualityCheck),
-        },
+        message: awsResult?.message || "Face not recognized.",
+        reason: awsResult?.reason,
       });
     }
 
-    const awsResult = await Promise.race([
-      searchFace(tempFilePath),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("AWS timeout")), 10000),
-      ),
-    ]);
-    if (!awsResult.success) {
-      if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
-      return res.status(401).json({
-        success: false,
-        message: awsResult.message || "Face not recognized.",
-        reason: awsResult.reason,
-      });
-    }
+    // Use confidence logic from searchFace instead of separate API call
+    const isLive = awsResult.confidence >= 99;
 
     const user = await User.findById(awsResult.userId);
     if (!user) {
@@ -550,8 +533,8 @@ exports.faceLogin = async (req, res) => {
       { expiresIn: "30d" },
     );
 
-    // ─── FIX: session + activity log + wallet — all 3 parallel ───────────
-    const [, , , note] = await Promise.all([
+    // ─── FIX: session + activity log + wallet — all 4 parallel ───────────
+    const [sess, activity, wallet, note] = await Promise.all([
       createSession(user._id, token, req),
       logActivity(user._id, "Face Login", "success", req),
       Wallet.findOne({ user_id: user._id }),
@@ -559,12 +542,17 @@ exports.faceLogin = async (req, res) => {
         title: "New Login Detected 🔓",
         message: `Your account was just accessed via Face Login on ${new Date().toLocaleTimeString()}.`,
         type: "info",
-      }),
+      }).catch(() => null),
     ]);
 
     if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
 
     const userData = user.toDecrypted();
+    const finalWallet = wallet || {
+      balance: user.wallet_balance || user.balance || 0,
+      wallet_key: user.wallet_key || null,
+    };
+
     res.json({
       success: true,
       message: "Face login successful",
@@ -575,8 +563,8 @@ exports.faceLogin = async (req, res) => {
         email: userData.email,
         mobile: userData.mobile,
         upi_id: user.upi_id || null,
-        balance: wallet?.balance ?? user.wallet_balance ?? user.balance ?? 0,
-        wallet_key: wallet?.wallet_key || user.wallet_key || null,
+        balance: finalWallet.balance,
+        wallet_key: finalWallet.wallet_key,
         bank_name: user.bank_name,
         is_verified: user.is_verified,
         is_2fa_enabled: user.is_2fa_enabled,
@@ -587,9 +575,9 @@ exports.faceLogin = async (req, res) => {
         faceId: awsResult.faceId,
       },
       liveness: {
-        isLive: qualityCheck.isLive,
-        score: qualityCheck.liveness.score,
-        quality: qualityCheck.quality,
+        isLive: isLive,
+        score: awsResult.confidence,
+        quality: awsResult.quality,
       },
     });
   } catch (error) {

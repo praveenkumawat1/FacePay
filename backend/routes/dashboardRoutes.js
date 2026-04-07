@@ -37,6 +37,12 @@ router.get("/transactions", dashboardController.getTransactions);
 router.get("/users", dashboardController.getSearchUsers);
 
 /**
+ * GET /api/dashboard/user-by-upi/:upi_id
+ * Get user by UPI ID
+ */
+router.get("/user-by-upi/:upi_id", dashboardController.getUserByUpi);
+
+/**
  * POST /api/dashboard/request-money
  * Request money from a user
  */

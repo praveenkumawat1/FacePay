@@ -4,6 +4,7 @@ const paymentController = require("../controllers/paymentController");
 const { protect } = require("../middleware/security");
 
 router.post("/pay", protect, paymentController.processPayment);
+router.post("/face-pay", protect, paymentController.processPayment);
 router.get("/transactions", protect, paymentController.getTransactions);
 router.get("/balance", protect, paymentController.getBalance);
 

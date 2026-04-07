@@ -36,6 +36,7 @@ import {
 import { MdQrCode } from "react-icons/md";
 import { QRCodeSVG } from "qrcode.react";
 import { toast, Toaster } from "react-hot-toast";
+import SendMoneyFlow from "./Sendmoneyflow";
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 // ✅ FIX: Backend ka direct URL use karo — CORS problem solve hogi
@@ -164,6 +165,13 @@ export default function SendMoneyPremium() {
   const [sendAmt, setSendAmt] = useState("");
   const [sendNote, setSendNote] = useState("");
   const [sendCat, setSendCat] = useState("Others");
+  const [moreServices, setMoreServices] = useState([
+    { icon: FiPhoneOutgoing, label: "Recharge", detail: "Instant Topup" },
+    { icon: FiDollarSign, label: "Pay Bills", detail: "Fast Payments" },
+    { icon: FiBriefcase, label: "Insurance", detail: "Stay Protected" },
+    { icon: FiAirplay, label: "Broadband", detail: "High Speed" },
+    { icon: FiFilm, label: "Movies", detail: "Entertainment" },
+  ]);
 
   // URL token save
   useEffect(() => {
@@ -175,89 +183,137 @@ export default function SendMoneyPremium() {
     }
   }, []);
 
-  const fetchAllData = useCallback(async (isPolling = false) => {
-    const token = getToken();
-
-    if (!token) {
-      console.error("❌ TOKEN NOT FOUND");
-      console.log("📦 localStorage keys:", Object.keys(localStorage));
-      setFetchError("No login token found. Please login first.");
-      setLoading(false);
-      return;
-    }
-
-    if (!isPolling) setLoading(true);
-    setFetchError(null);
-
+  const fetchStats = useCallback(async () => {
     try {
-      // ✅ FIX: Notifications ke liye sahi route — /api/dashboard/notifications ya ignore karo
-      const [profileRes, activityRes, notifRes] = await Promise.allSettled([
-        api.get("/api/auth/profile"),
-        api.get("/api/wallet/history"),
-        // ✅ FIX: Pehle dashboard notifications try karo, fail ho to auth try karo
-        api.get("/api/dashboard/notifications").catch(() =>
-          api.get("/api/notifications").catch(() =>
-            // ✅ Agar koi bhi nahi hai to empty return karo — error mat throw karo
-            ({ data: { notifications: [] } }),
-          ),
-        ),
-      ]);
-
-      if (profileRes.status === "fulfilled") {
-        const u = profileRes.value.data.user;
-        setUser(u);
-        setBalance(u.balance ?? 0);
-        setWalletId(u.wallet_key || u.walletId || "");
-        if (u.bank_name) {
-          setBankOptions([
-            {
-              bank: u.bank_name,
-              account: u.account_number || "XXXX",
-              ifsc: u.ifsc || "XXXX",
-              branch: u.branch || "Main",
-            },
-          ]);
-        }
-      } else {
-        console.error(
-          "❌ Profile:",
-          profileRes.reason?.response?.data || profileRes.reason?.message,
-        );
-        if (!isPolling) toast.error("Failed to load profile.");
-      }
-
-      if (activityRes.status === "fulfilled") {
-        const txns =
-          activityRes.value.data.transactions ||
-          activityRes.value.data.history ||
-          activityRes.value.data ||
-          [];
-        setActivity(Array.isArray(txns) ? txns : []);
-      } else {
-        console.error(
-          "❌ History:",
-          activityRes.reason?.response?.data || activityRes.reason?.message,
-        );
-        if (!isPolling) toast.error("Failed to load transactions.");
-      }
-
-      // ✅ FIX: Notifications — error pe empty array set karo, crash mat karo
-      if (notifRes.status === "fulfilled") {
-        const notifs =
-          notifRes.value.data?.notifications || notifRes.value.data || [];
-        setNotifications(Array.isArray(notifs) ? notifs : []);
-      } else {
-        // ✅ Notifications fail hone pe sirf empty set karo — toast error mat dikhao
-        console.log("ℹ️ Notifications endpoint not found — showing empty");
-        setNotifications([]);
+      const token = getToken();
+      if (!token) return;
+      const res = await api.get("/api/user/stats");
+      if (res.data) {
+        const stats = res.data;
+        setMoreServices([
+          {
+            icon: FiZap,
+            label: `${stats.coins || 0} Coins`,
+            detail: "Rewards Balance",
+          },
+          {
+            icon: FiTrendingUp,
+            label: stats.hasShield ? "Shield Active" : "Get Shield",
+            detail: stats.hasShield ? "Protection On" : "Safe Payments",
+          },
+          {
+            icon: FiCheckCircle,
+            label: stats.upiStreak
+              ? `${stats.upiStreak} Day Streak`
+              : "Start Streak",
+            detail: "Daily Progress",
+          },
+          {
+            icon: FiShoppingBag,
+            label: "Marketplace",
+            detail: stats.scratchAvail ? "Scratch Card!" : "View Deals",
+          },
+          {
+            icon: FiPhoneOutgoing,
+            label: "Recharge",
+            detail: "Instant Topup",
+          },
+        ]);
       }
     } catch (err) {
-      console.error("❌ Fetch error:", err);
-      if (!isPolling) setFetchError(err.message || "Network error.");
-    } finally {
-      if (!isPolling) setLoading(false);
+      console.error("Error fetching real-time services:", err);
     }
   }, []);
+
+  const fetchAllData = useCallback(
+    async (isPolling = false) => {
+      const token = getToken();
+
+      if (!token) {
+        console.error("❌ TOKEN NOT FOUND");
+        console.log("📦 localStorage keys:", Object.keys(localStorage));
+        setFetchError("No login token found. Please login first.");
+        setLoading(false);
+        return;
+      }
+
+      if (!isPolling) setLoading(true);
+      setFetchError(null);
+
+      try {
+        // Fetch stats for real-time services section
+        fetchStats();
+
+        // ✅ FIX: Notifications ke liye sahi route — /api/dashboard/notifications ya ignore karo
+        const [profileRes, activityRes, notifRes] = await Promise.allSettled([
+          api.get("/api/auth/profile"),
+          api.get("/api/wallet/history"),
+          // ✅ FIX: Pehle dashboard notifications try karo, fail ho to auth try karo
+          api.get("/api/dashboard/notifications").catch(() =>
+            api.get("/api/notifications").catch(() =>
+              // ✅ Agar koi bhi nahi hai to empty return karo — error mat throw karo
+              ({ data: { notifications: [] } }),
+            ),
+          ),
+        ]);
+
+        if (profileRes.status === "fulfilled") {
+          const u = profileRes.value.data.user;
+          setUser(u);
+          setBalance(u.balance ?? 0);
+          setWalletId(u.wallet_key || u.walletId || "");
+          if (u.bank_name) {
+            setBankOptions([
+              {
+                bank: u.bank_name,
+                account: u.account_number || "XXXX",
+                ifsc: u.ifsc || "XXXX",
+                branch: u.branch || "Main",
+              },
+            ]);
+          }
+        } else {
+          console.error(
+            "❌ Profile:",
+            profileRes.reason?.response?.data || profileRes.reason?.message,
+          );
+          if (!isPolling) toast.error("Failed to load profile.");
+        }
+
+        if (activityRes.status === "fulfilled") {
+          const txns =
+            activityRes.value.data.transactions ||
+            activityRes.value.data.history ||
+            activityRes.value.data ||
+            [];
+          setActivity(Array.isArray(txns) ? txns : []);
+        } else {
+          console.error(
+            "❌ History:",
+            activityRes.reason?.response?.data || activityRes.reason?.message,
+          );
+          if (!isPolling) toast.error("Failed to load transactions.");
+        }
+
+        // ✅ FIX: Notifications — error pe empty array set karo, crash mat karo
+        if (notifRes.status === "fulfilled") {
+          const notifs =
+            notifRes.value.data?.notifications || notifRes.value.data || [];
+          setNotifications(Array.isArray(notifs) ? notifs : []);
+        } else {
+          // ✅ Notifications fail hone pe sirf empty set karo — toast error mat dikhao
+          console.log("ℹ️ Notifications endpoint not found — showing empty");
+          setNotifications([]);
+        }
+      } catch (err) {
+        console.error("❌ Fetch error:", err);
+        if (!isPolling) setFetchError(err.message || "Network error.");
+      } finally {
+        if (!isPolling) setLoading(false);
+      }
+    },
+    [fetchStats],
+  );
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -584,58 +640,71 @@ export default function SendMoneyPremium() {
 
         {/* ACTION BUTTONS */}
         <section className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          {[
-            {
-              label: "Send",
-              icon: FiArrowUpRight,
-              onClick: () => setShowSend(true),
-              cls: "bg-gradient-to-br from-indigo-600 to-purple-600 text-white shadow-xl",
-            },
-            {
-              label: "Receive",
-              icon: FiArrowDownLeft,
-              onClick: () => setShowReceive(true),
-              cls: "bg-white border-2 border-indigo-200 text-indigo-700 hover:bg-indigo-50",
-            },
-            {
-              label: "Request",
-              icon: FiUserPlus,
-              onClick: () => setShowRequest(true),
-              cls: "bg-emerald-50 border-2 border-emerald-200 text-emerald-700 hover:bg-emerald-100",
-            },
-          ].map(({ label, icon: Icon, onClick, cls }) => (
-            <motion.button
-              key={label}
-              whileHover={{ y: -4 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={onClick}
-              className={`py-6 font-bold text-xl rounded-2xl shadow-lg flex items-center justify-center gap-3 transition ${cls}`}
-            >
-              <Icon size={28} /> {label}
-            </motion.button>
-          ))}
+          <SendMoneyFlow
+            walletBalance={balance}
+            onPaymentComplete={() => fetchAllData(true)}
+            initialMode="send"
+            label="Send"
+            icon={FiArrowUpRight}
+            className="bg-indigo-600 text-white hover:bg-indigo-700"
+          />
+
+          <SendMoneyFlow
+            walletBalance={balance}
+            onPaymentComplete={() => fetchAllData(true)}
+            initialMode="request"
+            label="Request"
+            icon={FiUserPlus}
+            className="bg-emerald-600 text-white hover:bg-emerald-700"
+          />
+
+          <motion.button
+            whileHover={{ y: -4 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => setShowReceive(true)}
+            className="py-6 font-bold text-xl rounded-2xl shadow-lg flex items-center justify-center gap-3 transition bg-white border-2 border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+          >
+            <FiArrowDownLeft size={28} /> Receive
+          </motion.button>
         </section>
 
         {/* MORE SERVICES */}
         <section>
-          <h3 className="text-xl font-bold text-slate-800 mb-6">
-            More Services
-          </h3>
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-xl font-bold text-slate-800">More Services</h3>
+            <span className="flex items-center gap-1.5 px-3 py-1 bg-green-50 text-green-600 text-[10px] font-black uppercase tracking-widest rounded-full border border-green-100 shadow-sm">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+              Live
+            </span>
+          </div>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            {MORE_SERVICES.map(([Icon, label]) => (
-              <motion.button
-                key={label}
-                whileHover={{ scale: 1.02, y: -2 }}
-                whileTap={{ scale: 0.97 }}
-                onClick={() => setShowComingSoon(true)}
-                className="flex flex-col items-center gap-2 p-4 bg-white/80 backdrop-blur-sm border border-indigo-100/60 rounded-xl shadow-sm hover:shadow-md transition"
-              >
-                <Icon size={24} className="text-indigo-600" />
-                <span className="text-xs font-medium text-slate-700">
-                  {label}
-                </span>
-              </motion.button>
-            ))}
+            {moreServices.map((service, idx) => {
+              const Icon = service.icon;
+              return (
+                <motion.button
+                  key={service.label}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.1 * idx }}
+                  whileHover={{ scale: 1.02, y: -4 }}
+                  whileTap={{ scale: 0.97 }}
+                  onClick={() => setShowComingSoon(true)}
+                  className="group flex flex-col items-center gap-3 p-5 bg-white/80 backdrop-blur-sm border border-indigo-100/60 rounded-2xl shadow-sm hover:shadow-xl hover:bg-white hover:border-indigo-300 transition-all duration-300"
+                >
+                  <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center group-hover:bg-indigo-600 group-hover:text-white transition-colors duration-300 shadow-sm shadow-indigo-100">
+                    <Icon size={24} />
+                  </div>
+                  <div className="text-center">
+                    <span className="block text-sm font-bold text-slate-800 tracking-tight">
+                      {service.label}
+                    </span>
+                    <span className="block text-[10px] font-medium text-slate-400 group-hover:text-indigo-400 transition-colors">
+                      {service.detail}
+                    </span>
+                  </div>
+                </motion.button>
+              );
+            })}
           </div>
         </section>
 

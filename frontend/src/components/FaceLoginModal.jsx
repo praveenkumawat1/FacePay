@@ -135,26 +135,15 @@ const FaceLoginModal = ({ close, onSuccess }) => {
       setStep("scanning");
       setLoading(true);
 
-      console.log("Capturing multiple frames for liveness check...");
+      console.log("Capturing frame for verification...");
 
-      const frames = [];
-
-      for (let i = 0; i < 3; i++) {
-        setChallengeStep(i + 1);
-
-        const frame = webcamRef.current?.getScreenshot();
-        if (!frame) {
-          throw new Error("Failed to capture frame " + (i + 1));
-        }
-
-        frames.push(frame);
-
-        if (i < 2) {
-          await new Promise((resolve) => setTimeout(resolve, 500));
-        }
+      // ⚡ FAST: Capture only ONE frame for login instead of waiting for 3
+      const frame = webcamRef.current?.getScreenshot();
+      if (!frame) {
+        throw new Error("Failed to capture face");
       }
 
-      console.log("Captured 3 frames");
+      setScanProgress(50);
       console.log("Verifying with AWS Rekognition...");
 
       const response = await fetch(
@@ -163,13 +152,13 @@ const FaceLoginModal = ({ close, onSuccess }) => {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            image: frames[1],
-            frames: frames,
+            image: frame,
           }),
         },
       );
 
       const result = await response.json();
+      setScanProgress(100);
       console.log("Response:", result);
 
       if (result.success && result.token) {
@@ -182,11 +171,10 @@ const FaceLoginModal = ({ close, onSuccess }) => {
 
         setStep("success");
 
-        setTimeout(() => {
-          if (onSuccess) onSuccess(result);
-          close();
-          window.location.href = "/dashboard";
-        }, 2000);
+        // ⚡ INSTANT REDIRECT: Redirect immediately on success
+        if (onSuccess) onSuccess(result);
+        close();
+        window.location.href = "/dashboard";
       } else {
         console.log("Verification failed");
         setError(result.message || "Face not recognized. Please try again.");

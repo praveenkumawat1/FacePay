@@ -168,6 +168,7 @@ exports.getDashboardData = async (req, res) => {
         categorySpending,
         transactionCount: transactions.length,
       },
+      services: [],
       notifications: user.notifications || [],
     };
 
@@ -755,6 +756,42 @@ exports.getSearchUsers = async (req, res) => {
   } catch (error) {
     console.error("❌ Search users error:", error);
     res.status(500).json({ success: false, message: "Search failed" });
+  }
+};
+
+// ─── GET USER BY UPI ID (FOR QR SCAN) ─────────────────────────────────────────
+exports.getUserByUpi = async (req, res) => {
+  try {
+    const { upi_id } = req.params;
+
+    if (!upi_id) {
+      return res
+        .status(400)
+        .json({ success: false, message: "UPI ID is required" });
+    }
+
+    const user = await User.findOne({ upi_id: upi_id })
+      .select("full_name profile_picture upi_id")
+      .lean();
+
+    if (!user) {
+      return res
+        .status(404)
+        .json({ success: false, message: "FacePay user not found" });
+    }
+
+    res.json({
+      success: true,
+      user: {
+        id: user._id,
+        name: user.full_name,
+        upi_id: user.upi_id,
+        profile_picture: user.profile_picture,
+      },
+    });
+  } catch (error) {
+    console.error("❌ Get user by UPI error:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
 

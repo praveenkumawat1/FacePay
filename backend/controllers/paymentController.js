@@ -1,101 +1,120 @@
 const User = require("../models/User");
 const Transaction = require("../models/Transaction");
 const Wallet = require("../models/Wallet");
+const mongoose = require("mongoose");
 const { v4: uuidv4 } = require("uuid");
 const { sendNotification } = require("../utils/notification");
 
 exports.processPayment = async (req, res) => {
-  const session = await User.startSession();
+  // ⚡ ULTRA-FAST: Optimized Transaction Handling
+  const session = await mongoose.startSession();
   session.startTransaction();
 
   try {
-    const { receiver_upi, amount, description } = req.body;
-    const sender_id = req.userId || req.user?.user_id;
+    const { recipient_id, amount, note } = req.body;
+    const sender_id = req.userId || req.user?.id;
 
-    if (!sender_id) {
-      return res
-        .status(401)
-        .json({ success: false, message: "User not authenticated" });
-    }
-
-    if (!receiver_upi || !amount) {
-      throw new Error("Receiver UPI and amount required");
+    if (!sender_id || !recipient_id || !amount) {
+      throw new Error("Missing required payment fields");
     }
 
     const paymentAmount = parseFloat(amount);
+    if (paymentAmount <= 0) throw new Error("Invalid amount");
 
-    const sender = await User.findById(sender_id).session(session);
+    // 1. Parallel Fetching with specialized projection for speed
+    const [sender, recipient, senderWallet, recipientWallet] = await Promise.all([
+      User.findById(sender_id).session(session).select("full_name").lean(),
+      User.findById(recipient_id).session(session).select("full_name faceImageUrl").lean(),
+      Wallet.findOne({ user_id: sender_id }).session(session),
+      Wallet.findOne({ user_id: recipient_id }).session(session)
+    ]);
 
-    if (!sender) throw new Error("Sender not found");
-
-    if (sender.balance < paymentAmount) {
-      throw new Error(`Insufficient balance.  Available: ₹${sender.balance}`);
+    if (!sender || !recipient) throw new Error("User profile not found");
+    if (sender._id.toString() === recipient._id.toString()) throw new Error("Cannot send money to yourself");
+    if (!senderWallet || senderWallet.balance < paymentAmount) {
+      throw new Error(`Insufficient balance (₹${senderWallet?.balance || 0})`);
     }
 
-    const receiver = await User.findOne({ upi_id: receiver_upi }).session(
-      session,
-    );
+    // 2. Atomic Balance Update
+    const transaction_id = `TXN${uuidv4().substring(0, 8).toUpperCase()}`;
+    const senderPrevBalance = senderWallet.balance;
+    
+    senderWallet.balance -= paymentAmount;
+    await senderWallet.save({ session });
 
-    if (!receiver) throw new Error("Receiver UPI ID not found");
-
-    if (sender._id.toString() === receiver._id.toString()) {
-      throw new Error("Cannot send money to yourself");
+    let activeRecipientWallet = recipientWallet;
+    if (!activeRecipientWallet) {
+       activeRecipientWallet = new Wallet({ user_id: recipient._id, balance: paymentAmount });
+    } else {
+       activeRecipientWallet.balance += paymentAmount;
     }
+    await activeRecipientWallet.save({ session });
 
-    sender.balance -= paymentAmount;
-    receiver.balance += paymentAmount;
-
-    await sender.save({ session });
-    await receiver.save({ session });
-
-    const transaction_id = `TXN${uuidv4().substring(0, 10).toUpperCase()}`;
-
-    const newTransaction = new Transaction({
+    // 3. Fire-and-forget Transaction Logging (Optimized for speed)
+    const commonFields = {
       transaction_id,
-      sender_id: sender._id,
-      receiver_upi,
-      receiver_name: receiver.full_name,
       amount: paymentAmount,
-      face_verified: true,
-      face_match_score: 0.92,
-      status: "SUCCESS",
-      description: description || "Payment",
+      note,
+      status: "success",
       completed_at: new Date(),
-    });
+      category: "Transfer",
+    };
 
-    await newTransaction.save({ session });
+    // Parallel save transaction records
+    Promise.all([
+      new Transaction({ ...commonFields, user_id: sender._id, type: "debit", flow: "send", balance_before: senderPrevBalance, balance_after: senderWallet.balance, title: `Sent to ${recipient.full_name}`, counterparty_id: recipient._id, recipient: recipient.full_name, sender: sender._id }).save({ session }),
+      new Transaction({ ...commonFields, user_id: recipient._id, type: "credit", flow: "receive", balance_before: recipientWallet?.balance || 0, balance_after: activeRecipientWallet.balance, title: `Received from ${sender.full_name}`, counterparty_id: sender._id, recipient: recipient.full_name, sender: sender._id }).save({ session })
+    ]).catch(err => console.error("Txn Log Error:", err));
 
-    await sendNotification(sender._id, {
-      title: "Payment Sent",
-      message: `Successfully transferred ₹${paymentAmount} to ${receiver.full_name}.`,
-      type: "success",
-    });
+    // 4. Rewards Notification (Parallel with Commit)
+    const couponPromise = paymentAmount >= 50 ? Promise.resolve({
+      code: `WIN${Math.random().toString(36).substr(2, 4).toUpperCase()}`,
+      message: "Scratch card won!",
+      type: "scratch_card"
+    }) : Promise.resolve(null);
 
-    await sendNotification(receiver._id, {
-      title: "Money Received",
-      message: `You've received ₹${paymentAmount} from ${sender.full_name}.`,
-      type: "success",
-    });
-
+    // 5. Commit Transaction & Return ASAP
     await session.commitTransaction();
     session.endSession();
 
-    res.json({
+    // Fire non-critical tasks in background
+    setImmediate(() => {
+      // Parallel background tasks
+      Promise.all([
+        // Scratch card logic (already prepared in 4)
+        couponPromise,
+        // Notifications
+        sendNotification(sender._id, { title: "Payment Successful", message: `₹${paymentAmount} sent`, type: "success" }),
+        sendNotification(recipient._id, { title: "Payment Received", message: `₹${paymentAmount} received`, type: "success" })
+      ]).catch(() => {});
+    });
+
+    return res.json({
       success: true,
       message: "Payment successful",
       transaction: {
-        transaction_id,
+        id: transaction_id,
         amount: paymentAmount,
-        receiver: receiver.full_name,
-        receiver_upi,
-        new_balance: sender.balance.toFixed(2),
+        recipient: { name: recipient.full_name, id: recipient._id, profile_picture: recipient.faceImageUrl },
+        coupon: await couponPromise, // This is already a resolved or quick promise
+        new_balance: senderWallet.balance,
       },
     });
   } catch (error) {
-    await session.abortTransaction();
-    session.endSession();
-
-    res.status(400).json({
+    if (session) {
+      await session.abortTransaction();
+      session.endSession();
+    }
+    return res.status(400).json({ success: false, message: error.message });
+  }
+};
+  } catch (error) {
+    if (session) {
+      await session.abortTransaction();
+      session.endSession();
+    }
+    console.error("Payment Error:", error);
+    return res.status(400).json({
       success: false,
       message: error.message,
     });

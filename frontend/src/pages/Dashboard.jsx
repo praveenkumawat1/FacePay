@@ -1,6 +1,7 @@
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
 import NotificationSidebar from "../components/NotificationSidebar";
+import QRScannerModal from "../components/QRScannerModal";
 import {
   FiSend,
   FiPocket,
@@ -28,6 +29,7 @@ import {
   FiMoon,
   FiSun,
   FiGlobe,
+  FiAlertCircle,
 } from "react-icons/fi";
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -331,6 +333,7 @@ function DashboardInner() {
   const [user, setUser] = useState(null);
   const [wallet, setWallet] = useState(null);
   const [transactions, setTransactions] = useState([]);
+  const [stats, setStats] = useState(null); // Added setStats state
   const [loading, setLoading] = useState(true);
   const [showBalance, setShowBalance] = useState(true);
   const [notiCount, setNotiCount] = useState(0);
@@ -340,6 +343,8 @@ function DashboardInner() {
   const [showAIAssist, setShowAIAssist] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+  const [showQRScanner, setShowQRScanner] = useState(false);
+  const [scannedUser, setScannedUser] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [popupView, setPopupView] = useState(null);
   const profileRef = useRef(null);
@@ -1230,6 +1235,10 @@ function DashboardInner() {
                   walletBalance={parseFloat(wallet?.balance || 0)}
                   onPaymentComplete={handlePaymentComplete}
                   delay={0.1}
+                  initialStep={scannedUser ? "amount" : "intro"}
+                  initialRecipient={scannedUser}
+                  forceOpen={!!scannedUser}
+                  onClose={() => setScannedUser(null)}
                 />
                 <RequestMoneyFlow
                   darkMode={darkMode}
@@ -1246,7 +1255,7 @@ function DashboardInner() {
                   icon={<FiCamera />}
                   label={t("scanQr")}
                   delay={0.4}
-                  onClick={() => {}}
+                  onClick={() => setShowQRScanner(true)}
                 />
               </div>
             </section>
@@ -1993,6 +2002,25 @@ function DashboardInner() {
           <Outlet />
         </div>
       </main>
+
+      <QRScannerModal
+        isOpen={showQRScanner}
+        onClose={() => setShowQRScanner(false)}
+        darkMode={dm}
+        onUserDetected={(scanned) => {
+          // If it's a FacePay user, redirect to send money flow
+          if (scanned.id) {
+            navigate(
+              `/dashboard/send?recipient=${scanned.id}&upi=${scanned.upi_id}&name=${encodeURIComponent(scanned.name)}`,
+            );
+          } else if (scanned.isExternal) {
+            // Standard UPI QR
+            navigate(
+              `/dashboard/send?upi=${scanned.upi_id}&name=${encodeURIComponent(scanned.name)}`,
+            );
+          }
+        }}
+      />
     </div>
   );
 }
